@@ -1,8 +1,16 @@
-import { Timestamp } from "firebase-admin/firestore";
+import { FieldValue, Timestamp } from "firebase-admin/firestore";
 
 import { firestore } from "../config/firebaseAdmin";
 import { DomainError } from "../errors/DomainError";
-import type { Guest, GuestType, Invitation, RsvpStatus } from "../types/invitation";
+import type {
+  CreateInvitationInput,
+  Guest,
+  GuestType,
+  Invitation,
+  RsvpStatus,
+} from "../types/invitation";
+import { generateInvitationId } from "./invitationId.service";
+import { createInvitationData } from "./invitationModel.service";
 
 const RSVP_STATUSES = new Set<RsvpStatus>([
   "pending",
@@ -11,6 +19,7 @@ const RSVP_STATUSES = new Set<RsvpStatus>([
   "declined",
 ]);
 const GUEST_TYPES = new Set<GuestType>(["known", "open", "replacement"]);
+const MAX_ID_ATTEMPTS = 10;
 
 function invalidDocument(id: string, detail: string): never {
   throw new DomainError(`Invalid invitation document "${id}": ${detail}`);
@@ -110,4 +119,31 @@ export async function getInvitationById(id: string): Promise<Invitation | null> 
   const document = await firestore.collection("invitations").doc(id).get();
   if (!document.exists) return null;
   return mapInvitationDocument(document.id, document.data());
+}
+
+export async function createInvitation(
+  input: CreateInvitationInput,
+): Promise<Invitation> {
+  const invitationData = createInvitationData(input);
+  const collection = firestore.collection("invitations");
+
+  for (let attempt = 0; attempt < MAX_ID_ATTEMPTS; attempt += 1) {
+    const id = generateInvitationId();
+    const document = collection.doc(id);
+    const existing = await document.get();
+    if (existing.exists) continue;
+
+    await document.create({
+      ...invitationData,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+
+    const created = await document.get();
+    if (!created.exists) {
+      throw new Error("Created invitation could not be read back");
+    }
+    return mapInvitationDocument(created.id, created.data());
+  }
+
+  throw new Error("Could not generate a unique invitation ID");
 }

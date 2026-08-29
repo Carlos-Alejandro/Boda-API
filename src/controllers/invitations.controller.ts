@@ -1,10 +1,13 @@
 import type { NextFunction, Request, Response } from "express";
 
 import {
+  createInvitation,
   getInvitationById,
   listInvitations,
 } from "../services/invitations.service";
+import { DomainError } from "../errors/DomainError";
 import type { Invitation } from "../types/invitation";
+import { parseCreateInvitationInput } from "../validation/createInvitationInput";
 
 function toHttpInvitation(invitation: Invitation) {
   return {
@@ -45,5 +48,22 @@ export async function getInvitationController(
     response.status(200).json(toHttpInvitation(invitation));
   } catch (error) {
     next(error);
+  }
+}
+
+export async function createInvitationController(
+  request: Request,
+  response: Response,
+): Promise<void> {
+  try {
+    const input = parseCreateInvitationInput(request.body);
+    const invitation = await createInvitation(input);
+    response.status(201).json(toHttpInvitation(invitation));
+  } catch (error) {
+    if (error instanceof DomainError) {
+      response.status(400).json({ error: error.message });
+      return;
+    }
+    response.status(500).json({ error: "Internal server error" });
   }
 }

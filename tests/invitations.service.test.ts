@@ -2,25 +2,38 @@ import { Timestamp } from "firebase-admin/firestore";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const firestoreMocks = vi.hoisted(() => ({
+  createDocument: vi.fn(),
+  document: vi.fn(),
   getDocument: vi.fn(),
   listDocuments: vi.fn(),
 }));
+
+const idMocks = vi.hoisted(() => ({ generateInvitationId: vi.fn() }));
 
 vi.mock("../src/config/firebaseAdmin", () => ({
   firestore: {
     collection: vi.fn(() => ({
       get: firestoreMocks.listDocuments,
-      doc: vi.fn(() => ({ get: firestoreMocks.getDocument })),
+      doc: firestoreMocks.document,
     })),
   },
 }));
 
+vi.mock("../src/services/invitationId.service", () => idMocks);
+
+vi.mock("../src/services/invitationModel.service", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/services/invitationModel.service")>();
+  return { ...actual, createInvitationData: vi.fn(actual.createInvitationData) };
+});
+
 import { DomainError } from "../src/errors/DomainError";
 import {
+  createInvitation,
   getInvitationById,
   listInvitations,
   mapInvitationDocument,
 } from "../src/services/invitations.service";
+import { createInvitationData } from "../src/services/invitationModel.service";
 
 function validDocument() {
   return {
@@ -83,7 +96,13 @@ describe("mapInvitationDocument", () => {
 });
 
 describe("Firestore reads", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    firestoreMocks.document.mockReturnValue({
+      create: firestoreMocks.createDocument,
+      get: firestoreMocks.getDocument,
+    });
+  });
 
   it("returns null when getInvitationById does not find a document", async () => {
     firestoreMocks.getDocument.mockResolvedValue({ exists: false, id: "missing" });
@@ -98,5 +117,86 @@ describe("Firestore reads", () => {
     await expect(listInvitations()).resolves.toEqual([
       expect.objectContaining({ id: "KM8P2XQ7" }),
     ]);
+  });
+});
+
+describe("createInvitation", () => {
+  const input = {
+    displayName: "Familia Pérez",
+    knownGuests: [{ name: "Juan Pérez" }],
+    openSlots: 1,
+    replacementsAllowed: true,
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    idMocks.generateInvitationId.mockReturnValue("AB2CD3EF");
+    firestoreMocks.document.mockReturnValue({
+      create: firestoreMocks.createDocument,
+      get: firestoreMocks.getDocument,
+    });
+    firestoreMocks.createDocument.mockResolvedValue(undefined);
+  });
+
+  it("uses createInvitationData and creates the expected initial model", async () => {
+    firestoreMocks.getDocument
+      .mockResolvedValueOnce({ exists: false })
+      .mockResolvedValueOnce({
+        exists: true,
+        id: "AB2CD3EF",
+        data: () => ({
+          ...validDocument(),
+          displayName: "Familia Pérez",
+          rsvpStatus: "pending",
+        }),
+      });
+
+    await createInvitation(input);
+
+    expect(createInvitationData).toHaveBeenCalledWith(input);
+    expect(firestoreMocks.createDocument).toHaveBeenCalledOnce();
+    expect(firestoreMocks.createDocument).toHaveBeenCalledWith(
+      expect.objectContaining({
+        rsvpStatus: "pending",
+        maxGuests: 2,
+        guests: [
+          expect.objectContaining({ type: "known", name: "Juan Pérez" }),
+          expect.objectContaining({ type: "open", name: "" }),
+        ],
+        updatedAt: expect.anything(),
+      }),
+    );
+  });
+
+  it("generates another id after a collision", async () => {
+    idMocks.generateInvitationId
+      .mockReturnValueOnce("COLLIDE2")
+      .mockReturnValueOnce("AB2CD3EF");
+    firestoreMocks.getDocument
+      .mockResolvedValueOnce({ exists: true })
+      .mockResolvedValueOnce({ exists: false })
+      .mockResolvedValueOnce({
+        exists: true,
+        id: "AB2CD3EF",
+        data: () => ({ ...validDocument(), rsvpStatus: "pending" }),
+      });
+
+    await createInvitation(input);
+
+    expect(idMocks.generateInvitationId).toHaveBeenCalledTimes(2);
+    expect(firestoreMocks.document).toHaveBeenNthCalledWith(1, "COLLIDE2");
+    expect(firestoreMocks.document).toHaveBeenNthCalledWith(2, "AB2CD3EF");
+    expect(firestoreMocks.createDocument).toHaveBeenCalledOnce();
+  });
+
+  it("fails safely after too many collisions without writing", async () => {
+    idMocks.generateInvitationId.mockReturnValue("COLLIDE2");
+    firestoreMocks.getDocument.mockResolvedValue({ exists: true });
+
+    await expect(createInvitation(input)).rejects.toThrow(
+      "Could not generate a unique invitation ID",
+    );
+    expect(idMocks.generateInvitationId).toHaveBeenCalledTimes(10);
+    expect(firestoreMocks.createDocument).not.toHaveBeenCalled();
   });
 });

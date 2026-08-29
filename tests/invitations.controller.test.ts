@@ -2,6 +2,7 @@ import type { NextFunction, Request, Response } from "express";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const serviceMocks = vi.hoisted(() => ({
+  createInvitation: vi.fn(),
   getInvitationById: vi.fn(),
   listInvitations: vi.fn(),
 }));
@@ -9,6 +10,7 @@ const serviceMocks = vi.hoisted(() => ({
 vi.mock("../src/services/invitations.service", () => serviceMocks);
 
 import {
+  createInvitationController,
   getInvitationController,
   listInvitationsController,
 } from "../src/controllers/invitations.controller";
@@ -71,5 +73,45 @@ describe("invitations controllers", () => {
       ],
       total: 1,
     });
+  });
+
+  it("returns 400 for an invalid create body", async () => {
+    const response = responseMock();
+    await createInvitationController(
+      { body: { displayName: "", knownGuests: [], openSlots: 0, replacementsAllowed: true } } as Request,
+      response,
+    );
+
+    expect(response.status).toHaveBeenCalledWith(400);
+    expect(serviceMocks.createInvitation).not.toHaveBeenCalled();
+  });
+
+  it("returns 201 for a valid creation", async () => {
+    serviceMocks.createInvitation.mockResolvedValue({
+      id: "AB2CD3EF",
+      displayName: "Familia Pérez",
+      maxGuests: 1,
+      replacementsAllowed: true,
+      rsvpStatus: "pending",
+      message: "",
+      updatedAt: new Date("2026-08-29T10:00:00.000Z"),
+      editOverrideUntil: null,
+      guests: [{ name: "Juan Pérez", shortName: "Juan", type: "known", attending: null }],
+    });
+    const response = responseMock();
+    const body = {
+      displayName: "Familia Pérez",
+      knownGuests: [{ name: "Juan Pérez" }],
+      openSlots: 0,
+      replacementsAllowed: true,
+    };
+
+    await createInvitationController({ body } as Request, response);
+
+    expect(serviceMocks.createInvitation).toHaveBeenCalledWith(body);
+    expect(response.status).toHaveBeenCalledWith(201);
+    expect(response.json).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "AB2CD3EF", updatedAt: "2026-08-29T10:00:00.000Z" }),
+    );
   });
 });
