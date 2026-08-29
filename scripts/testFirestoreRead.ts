@@ -1,10 +1,11 @@
-import { firestore } from "../src/config/firebaseAdmin";
+import { getInvitationById } from "../src/services/invitations.service";
+
+const INVITATION_IDS = ["CS7H4K2P", "KM8P2XQ7"] as const;
 
 type SafeError = {
   code?: unknown;
   message?: unknown;
   name?: unknown;
-  cause?: SafeError;
 };
 
 function sanitizedDetail(value: unknown): string | undefined {
@@ -18,32 +19,26 @@ function sanitizedDetail(value: unknown): string | undefined {
 
 async function testFirestoreRead(): Promise<void> {
   try {
-    const snapshot = await firestore.collection("invitations").limit(3).get();
+    for (const id of INVITATION_IDS) {
+      const invitation = await getInvitationById(id);
+      if (!invitation) {
+        console.log({ id, found: false });
+        continue;
+      }
 
-    if (snapshot.empty) {
-      console.log("Firestore read succeeded. The invitations collection returned no documents.");
-      return;
-    }
-
-    console.log(`Firestore read succeeded. Documents read: ${snapshot.size}`);
-    for (const document of snapshot.docs) {
-      const { displayName, maxGuests, rsvpStatus } = document.data();
       console.log({
-        id: document.id,
-        displayName,
-        maxGuests,
-        rsvpStatus,
+        id: invitation.id,
+        displayName: invitation.displayName,
+        maxGuests: invitation.maxGuests,
+        rsvpStatus: invitation.rsvpStatus,
       });
     }
   } catch (error: unknown) {
     const safeError = error as SafeError;
-    console.error("Firestore read failed.", {
+    console.error("Firestore service read failed.", {
       name: typeof safeError.name === "string" ? safeError.name : "Error",
       code: typeof safeError.code === "string" ? safeError.code : "unknown",
       message: sanitizedDetail(safeError.message),
-      causeCode:
-        typeof safeError.cause?.code === "string" ? safeError.cause.code : undefined,
-      causeMessage: sanitizedDetail(safeError.cause?.message),
     });
     process.exitCode = 1;
   }
