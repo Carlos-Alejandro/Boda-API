@@ -6,6 +6,7 @@ const serviceMocks = vi.hoisted(() => ({
   createInvitation: vi.fn(),
   getInvitationById: vi.fn(),
   listInvitations: vi.fn(),
+  restoreInvitationReplacement: vi.fn(),
   updateInvitation: vi.fn(),
 }));
 
@@ -16,6 +17,7 @@ import {
   createInvitationController,
   getInvitationController,
   listInvitationsController,
+  restoreInvitationReplacementController,
   updateInvitationController,
 } from "../src/controllers/invitations.controller";
 
@@ -203,6 +205,59 @@ describe("invitations controllers", () => {
       response,
     );
     expect(serviceMocks.changeCapacity).toHaveBeenCalledWith("KM8P2XQ7", 3);
+    expect(response.status).toHaveBeenCalledWith(200);
+  });
+
+  it("returns 400 for an invalid replacement guestIndex", async () => {
+    const response = responseMock();
+    await restoreInvitationReplacementController(
+      { params: { id: "KM8P2XQ7", guestIndex: "-1" } } as Request<{
+        id: string;
+        guestIndex: string;
+      }>,
+      response,
+    );
+    expect(response.status).toHaveBeenCalledWith(400);
+    expect(serviceMocks.restoreInvitationReplacement).not.toHaveBeenCalled();
+  });
+
+  it("returns 404 when the invitation to restore does not exist", async () => {
+    serviceMocks.restoreInvitationReplacement.mockResolvedValue(null);
+    const response = responseMock();
+    await restoreInvitationReplacementController(
+      { params: { id: "missing", guestIndex: "0" } } as Request<{
+        id: string;
+        guestIndex: string;
+      }>,
+      response,
+    );
+    expect(response.status).toHaveBeenCalledWith(404);
+  });
+
+  it("returns 200 after restoring a replacement", async () => {
+    serviceMocks.restoreInvitationReplacement.mockResolvedValue({
+      id: "KM8P2XQ7",
+      displayName: "Julia & Jordi",
+      maxGuests: 1,
+      replacementsAllowed: true,
+      rsvpStatus: "confirmed",
+      message: "",
+      updatedAt: new Date("2026-08-29T12:00:00.000Z"),
+      editOverrideUntil: null,
+      guests: [],
+    });
+    const response = responseMock();
+    await restoreInvitationReplacementController(
+      { params: { id: "KM8P2XQ7", guestIndex: "0" } } as Request<{
+        id: string;
+        guestIndex: string;
+      }>,
+      response,
+    );
+    expect(serviceMocks.restoreInvitationReplacement).toHaveBeenCalledWith(
+      "KM8P2XQ7",
+      0,
+    );
     expect(response.status).toHaveBeenCalledWith(200);
   });
 });

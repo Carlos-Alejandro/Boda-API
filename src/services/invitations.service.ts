@@ -14,6 +14,7 @@ import { generateInvitationId } from "./invitationId.service";
 import {
   changeInvitationCapacity,
   createInvitationData,
+  restoreReplacement,
 } from "./invitationModel.service";
 
 const RSVP_STATUSES = new Set<RsvpStatus>([
@@ -209,6 +210,38 @@ export async function changeCapacity(
 
   if (!result) return null;
   if (!result.changed) return result.invitation;
+
+  const updated = await document.get();
+  if (!updated.exists) throw new Error("Updated invitation could not be read back");
+  return mapInvitationDocument(updated.id, updated.data());
+}
+
+export async function restoreInvitationReplacement(
+  id: string,
+  guestIndex: number,
+): Promise<Invitation | null> {
+  const document = firestore.collection("invitations").doc(id);
+  const exists = await firestore.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(document);
+    if (!snapshot.exists) return false;
+
+    const current = mapInvitationDocument(snapshot.id, snapshot.data());
+    if (guestIndex < 0 || guestIndex >= current.guests.length) {
+      throw new DomainError("guestIndex is out of range");
+    }
+
+    const guests = current.guests.map((guest, index) =>
+      index === guestIndex ? restoreReplacement(guest) : guest,
+    );
+    transaction.update(document, {
+      guests,
+      rsvpStatus: "pending",
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    return true;
+  });
+
+  if (!exists) return null;
 
   const updated = await document.get();
   if (!updated.exists) throw new Error("Updated invitation could not be read back");

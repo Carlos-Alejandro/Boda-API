@@ -30,4 +30,15 @@ describe("invitations routes", () => {
     expect(capacityRoute).toBeDefined();
     expect(capacityRoute?.route?.stack[0].handle).toBe(authenticateAdmin);
   });
+
+  it("protects replacement restore POST with authenticateAdmin", () => {
+    const restoreRoute = invitationsRouter.stack.find(
+      (layer) =>
+        layer.route?.path === "/:id/guests/:guestIndex/restore-replacement" &&
+        layer.route.methods.post,
+    );
+
+    expect(restoreRoute).toBeDefined();
+    expect(restoreRoute?.route?.stack[0].handle).toBe(authenticateAdmin);
+  });
 });
