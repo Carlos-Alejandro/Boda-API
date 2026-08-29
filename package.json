@@ -7,6 +7,7 @@
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
     "test": "vitest run",
+    "test:firestore-read": "tsx scripts/testFirestoreRead.ts",
     "start": "node dist/server.js"
   },
   "keywords": [],
