@@ -24,6 +24,7 @@ import {
   restoreArchivedInvitationController,
   updateInvitationController,
 } from "../src/controllers/invitations.controller";
+import { errorHandler } from "../src/middlewares/errorHandler";
 
 function responseMock() {
   const response = {
@@ -34,6 +35,17 @@ function responseMock() {
   return response as unknown as Response;
 }
 
+async function withErrorHandler(
+  operation: Promise<void>,
+  response: Response,
+): Promise<void> {
+  try {
+    await operation;
+  } catch (error) {
+    errorHandler(error, {} as Request, response, vi.fn());
+  }
+}
+
 describe("invitations controllers", () => {
   beforeEach(() => vi.clearAllMocks());
 
@@ -41,14 +53,18 @@ describe("invitations controllers", () => {
     serviceMocks.getInvitationById.mockResolvedValue(null);
     const response = responseMock();
 
-    await getInvitationController(
-      { params: { id: "missing" } } as Request<{ id: string }>,
+    await withErrorHandler(
+      getInvitationController(
+        { params: { id: "missing" } } as Request<{ id: string }>,
+        response,
+      ),
       response,
-      vi.fn() as NextFunction,
     );
 
     expect(response.status).toHaveBeenCalledWith(404);
-    expect(response.json).toHaveBeenCalledWith({ error: "Invitation not found" });
+    expect(response.json).toHaveBeenCalledWith({
+      error: { code: "INVITATION_NOT_FOUND", message: "Invitation not found" },
+    });
   });
 
   it("returns a list with ids and ISO dates", async () => {
@@ -113,10 +129,12 @@ describe("invitations controllers", () => {
   it("returns 400 for invalid or repeated list query parameters", async () => {
     const response = responseMock();
 
-    await listInvitationsController(
-      { query: { archived: ["true", "false"] } } as unknown as Request,
+    await withErrorHandler(
+      listInvitationsController(
+        { query: { archived: ["true", "false"] } } as unknown as Request,
+        response,
+      ),
       response,
-      vi.fn() as NextFunction,
     );
 
     expect(response.status).toHaveBeenCalledWith(400);
@@ -125,8 +143,11 @@ describe("invitations controllers", () => {
 
   it("returns 400 for an invalid create body", async () => {
     const response = responseMock();
-    await createInvitationController(
-      { body: { displayName: "", knownGuests: [], openSlots: 0, replacementsAllowed: true } } as Request,
+    await withErrorHandler(
+      createInvitationController(
+        { body: { displayName: "", knownGuests: [], openSlots: 0, replacementsAllowed: true } } as Request,
+        response,
+      ),
       response,
     );
 
@@ -166,8 +187,11 @@ describe("invitations controllers", () => {
   it("returns 404 when updating a missing invitation", async () => {
     serviceMocks.updateInvitation.mockResolvedValue(null);
     const response = responseMock();
-    await updateInvitationController(
-      { params: { id: "missing" }, body: { displayName: "Familia" } } as Request<{ id: string }>,
+    await withErrorHandler(
+      updateInvitationController(
+        { params: { id: "missing" }, body: { displayName: "Familia" } } as Request<{ id: string }>,
+        response,
+      ),
       response,
     );
     expect(response.status).toHaveBeenCalledWith(404);
@@ -175,8 +199,11 @@ describe("invitations controllers", () => {
 
   it("returns 400 for an invalid update body", async () => {
     const response = responseMock();
-    await updateInvitationController(
-      { params: { id: "KM8P2XQ7" }, body: { guests: [] } } as Request<{ id: string }>,
+    await withErrorHandler(
+      updateInvitationController(
+        { params: { id: "KM8P2XQ7" }, body: { guests: [] } } as Request<{ id: string }>,
+        response,
+      ),
       response,
     );
     expect(response.status).toHaveBeenCalledWith(400);
@@ -211,8 +238,11 @@ describe("invitations controllers", () => {
 
   it("returns 400 for an invalid capacity body", async () => {
     const response = responseMock();
-    await changeInvitationCapacityController(
-      { params: { id: "KM8P2XQ7" }, body: { maxGuests: 2.5 } } as Request<{ id: string }>,
+    await withErrorHandler(
+      changeInvitationCapacityController(
+        { params: { id: "KM8P2XQ7" }, body: { maxGuests: 2.5 } } as Request<{ id: string }>,
+        response,
+      ),
       response,
     );
     expect(response.status).toHaveBeenCalledWith(400);
@@ -222,8 +252,11 @@ describe("invitations controllers", () => {
   it("returns 404 when changing capacity of a missing invitation", async () => {
     serviceMocks.changeCapacity.mockResolvedValue(null);
     const response = responseMock();
-    await changeInvitationCapacityController(
-      { params: { id: "missing" }, body: { maxGuests: 3 } } as Request<{ id: string }>,
+    await withErrorHandler(
+      changeInvitationCapacityController(
+        { params: { id: "missing" }, body: { maxGuests: 3 } } as Request<{ id: string }>,
+        response,
+      ),
       response,
     );
     expect(response.status).toHaveBeenCalledWith(404);
@@ -252,11 +285,14 @@ describe("invitations controllers", () => {
 
   it("returns 400 for an invalid replacement guestIndex", async () => {
     const response = responseMock();
-    await restoreInvitationReplacementController(
-      { params: { id: "KM8P2XQ7", guestIndex: "-1" } } as Request<{
-        id: string;
-        guestIndex: string;
-      }>,
+    await withErrorHandler(
+      restoreInvitationReplacementController(
+        { params: { id: "KM8P2XQ7", guestIndex: "-1" } } as Request<{
+          id: string;
+          guestIndex: string;
+        }>,
+        response,
+      ),
       response,
     );
     expect(response.status).toHaveBeenCalledWith(400);
@@ -266,11 +302,14 @@ describe("invitations controllers", () => {
   it("returns 404 when the invitation to restore does not exist", async () => {
     serviceMocks.restoreInvitationReplacement.mockResolvedValue(null);
     const response = responseMock();
-    await restoreInvitationReplacementController(
-      { params: { id: "missing", guestIndex: "0" } } as Request<{
-        id: string;
-        guestIndex: string;
-      }>,
+    await withErrorHandler(
+      restoreInvitationReplacementController(
+        { params: { id: "missing", guestIndex: "0" } } as Request<{
+          id: string;
+          guestIndex: string;
+        }>,
+        response,
+      ),
       response,
     );
     expect(response.status).toHaveBeenCalledWith(404);
@@ -334,8 +373,11 @@ describe("invitations controllers", () => {
   it("returns 404 when archive target does not exist", async () => {
     serviceMocks.archiveInvitation.mockResolvedValue(null);
     const response = responseMock();
-    await archiveInvitationController(
-      { params: { id: "missing" } } as Request<{ id: string }>,
+    await withErrorHandler(
+      archiveInvitationController(
+        { params: { id: "missing" } } as Request<{ id: string }>,
+        response,
+      ),
       response,
     );
     expect(response.status).toHaveBeenCalledWith(404);
@@ -369,8 +411,11 @@ describe("invitations controllers", () => {
   it("returns 404 when restore target does not exist", async () => {
     serviceMocks.restoreArchivedInvitation.mockResolvedValue(null);
     const response = responseMock();
-    await restoreArchivedInvitationController(
-      { params: { id: "missing" } } as Request<{ id: string }>,
+    await withErrorHandler(
+      restoreArchivedInvitationController(
+        { params: { id: "missing" } } as Request<{ id: string }>,
+        response,
+      ),
       response,
     );
     expect(response.status).toHaveBeenCalledWith(404);

@@ -2,6 +2,7 @@ import type { NextFunction, Request, Response } from "express";
 
 import { env } from "../config/env";
 import { auth } from "../config/firebaseAdmin";
+import { sendError } from "../http/errorResponse";
 
 export async function authenticateAdmin(
   request: Request,
@@ -12,7 +13,7 @@ export async function authenticateAdmin(
   const match = authorization?.match(/^Bearer\s+(\S+)$/i);
 
   if (!match) {
-    response.status(401).json({ error: "Authentication required" });
+    sendError(response, 401, "UNAUTHORIZED", "Authentication required");
     return;
   }
 
@@ -20,7 +21,7 @@ export async function authenticateAdmin(
     const decodedToken = await auth.verifyIdToken(match[1]);
 
     if (!env.adminFirebaseUids.includes(decodedToken.uid)) {
-      response.status(403).json({ error: "Forbidden" });
+      sendError(response, 403, "FORBIDDEN", "Forbidden");
       return;
     }
 
@@ -31,6 +32,6 @@ export async function authenticateAdmin(
 
     next();
   } catch {
-    response.status(401).json({ error: "Invalid authentication token" });
+    sendError(response, 401, "UNAUTHORIZED", "Invalid authentication token");
   }
 }

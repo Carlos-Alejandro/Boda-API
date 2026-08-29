@@ -37,6 +37,7 @@ vi.mock("../src/services/invitationModel.service", async (importOriginal) => {
 });
 
 import { DomainError } from "../src/errors/DomainError";
+import { DataIntegrityError } from "../src/errors/DataIntegrityError";
 import {
   archiveInvitation,
   changeCapacity,
@@ -122,7 +123,7 @@ describe("mapInvitationDocument", () => {
   it("rejects an invalid rsvpStatus", () => {
     expect(() =>
       mapInvitationDocument("bad-id", { ...validDocument(), rsvpStatus: "maybe" }),
-    ).toThrow(DomainError);
+    ).toThrow(DataIntegrityError);
   });
 
   it("rejects a replacement without originalName", () => {
@@ -743,7 +744,7 @@ describe("restoreInvitationReplacement", () => {
     const invalidReplacement = { ...replacementGuest, originalName: "" };
     firestoreMocks.transactionGet.mockResolvedValueOnce(snapshot([invalidReplacement]));
     await expect(restoreInvitationReplacement("KM8P2XQ7", 0)).rejects.toThrow(
-      DomainError,
+      DataIntegrityError,
     );
     expect(firestoreMocks.transactionUpdate).not.toHaveBeenCalled();
   });

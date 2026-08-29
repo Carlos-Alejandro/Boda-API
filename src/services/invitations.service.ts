@@ -2,6 +2,7 @@ import { FieldValue, Timestamp } from "firebase-admin/firestore";
 
 import { firestore } from "../config/firebaseAdmin";
 import { DomainError } from "../errors/DomainError";
+import { DataIntegrityError } from "../errors/DataIntegrityError";
 import type {
   CreateInvitationInput,
   Guest,
@@ -28,7 +29,7 @@ const GUEST_TYPES = new Set<GuestType>(["known", "open", "replacement"]);
 const MAX_ID_ATTEMPTS = 10;
 
 function invalidDocument(id: string, detail: string): never {
-  throw new DomainError(`Invalid invitation document "${id}": ${detail}`);
+  throw new DataIntegrityError(`Invalid invitation document "${id}": ${detail}`);
 }
 
 function requireObject(id: string, value: unknown, field: string): Record<string, unknown> {
