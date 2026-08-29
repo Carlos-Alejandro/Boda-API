@@ -36,3 +36,7 @@ export interface UpdateInvitationInput {
   replacementsAllowed?: boolean;
   editOverrideUntil?: Date | null;
 }
+
+export interface ChangeInvitationCapacityInput {
+  maxGuests: number;
+}

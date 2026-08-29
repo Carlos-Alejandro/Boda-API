@@ -2,6 +2,7 @@ import type { NextFunction, Request, Response } from "express";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const serviceMocks = vi.hoisted(() => ({
+  changeCapacity: vi.fn(),
   createInvitation: vi.fn(),
   getInvitationById: vi.fn(),
   listInvitations: vi.fn(),
@@ -11,6 +12,7 @@ const serviceMocks = vi.hoisted(() => ({
 vi.mock("../src/services/invitations.service", () => serviceMocks);
 
 import {
+  changeInvitationCapacityController,
   createInvitationController,
   getInvitationController,
   listInvitationsController,
@@ -160,6 +162,47 @@ describe("invitations controllers", () => {
     expect(serviceMocks.updateInvitation).toHaveBeenCalledWith("KM8P2XQ7", {
       displayName: "Familia Actualizada",
     });
+    expect(response.status).toHaveBeenCalledWith(200);
+  });
+
+  it("returns 400 for an invalid capacity body", async () => {
+    const response = responseMock();
+    await changeInvitationCapacityController(
+      { params: { id: "KM8P2XQ7" }, body: { maxGuests: 2.5 } } as Request<{ id: string }>,
+      response,
+    );
+    expect(response.status).toHaveBeenCalledWith(400);
+    expect(serviceMocks.changeCapacity).not.toHaveBeenCalled();
+  });
+
+  it("returns 404 when changing capacity of a missing invitation", async () => {
+    serviceMocks.changeCapacity.mockResolvedValue(null);
+    const response = responseMock();
+    await changeInvitationCapacityController(
+      { params: { id: "missing" }, body: { maxGuests: 3 } } as Request<{ id: string }>,
+      response,
+    );
+    expect(response.status).toHaveBeenCalledWith(404);
+  });
+
+  it("returns 200 after changing capacity", async () => {
+    serviceMocks.changeCapacity.mockResolvedValue({
+      id: "KM8P2XQ7",
+      displayName: "Julia & Jordi",
+      maxGuests: 3,
+      replacementsAllowed: true,
+      rsvpStatus: "confirmed",
+      message: "",
+      updatedAt: new Date("2026-08-29T12:00:00.000Z"),
+      editOverrideUntil: null,
+      guests: [],
+    });
+    const response = responseMock();
+    await changeInvitationCapacityController(
+      { params: { id: "KM8P2XQ7" }, body: { maxGuests: 3 } } as Request<{ id: string }>,
+      response,
+    );
+    expect(serviceMocks.changeCapacity).toHaveBeenCalledWith("KM8P2XQ7", 3);
     expect(response.status).toHaveBeenCalledWith(200);
   });
 });

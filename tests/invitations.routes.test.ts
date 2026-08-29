@@ -21,4 +21,13 @@ describe("invitations routes", () => {
     expect(patchRoute).toBeDefined();
     expect(patchRoute?.route?.stack[0].handle).toBe(authenticateAdmin);
   });
+
+  it("protects PATCH /:id/capacity with authenticateAdmin", () => {
+    const capacityRoute = invitationsRouter.stack.find(
+      (layer) => layer.route?.path === "/:id/capacity" && layer.route.methods.patch,
+    );
+
+    expect(capacityRoute).toBeDefined();
+    expect(capacityRoute?.route?.stack[0].handle).toBe(authenticateAdmin);
+  });
 });

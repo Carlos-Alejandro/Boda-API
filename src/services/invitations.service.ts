@@ -11,7 +11,10 @@ import type {
   UpdateInvitationInput,
 } from "../types/invitation";
 import { generateInvitationId } from "./invitationId.service";
-import { createInvitationData } from "./invitationModel.service";
+import {
+  changeInvitationCapacity,
+  createInvitationData,
+} from "./invitationModel.service";
 
 const RSVP_STATUSES = new Set<RsvpStatus>([
   "pending",
@@ -172,6 +175,40 @@ export async function updateInvitation(
   }
 
   await document.update(changes);
+
+  const updated = await document.get();
+  if (!updated.exists) throw new Error("Updated invitation could not be read back");
+  return mapInvitationDocument(updated.id, updated.data());
+}
+
+export async function changeCapacity(
+  id: string,
+  newMaxGuests: number,
+): Promise<Invitation | null> {
+  const document = firestore.collection("invitations").doc(id);
+  const result = await firestore.runTransaction(async (transaction) => {
+    const currentSnapshot = await transaction.get(document);
+    if (!currentSnapshot.exists) return null;
+
+    const current = mapInvitationDocument(
+      currentSnapshot.id,
+      currentSnapshot.data(),
+    );
+    if (newMaxGuests === current.maxGuests) {
+      return { invitation: current, changed: false } as const;
+    }
+
+    const changed = changeInvitationCapacity(current, newMaxGuests);
+    transaction.update(document, {
+      guests: changed.guests,
+      maxGuests: changed.maxGuests,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    return { invitation: changed, changed: true } as const;
+  });
+
+  if (!result) return null;
+  if (!result.changed) return result.invitation;
 
   const updated = await document.get();
   if (!updated.exists) throw new Error("Updated invitation could not be read back");

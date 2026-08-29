@@ -1,6 +1,7 @@
 import { Router } from "express";
 
 import {
+  changeInvitationCapacityController,
   createInvitationController,
   getInvitationController,
   listInvitationsController,
@@ -13,6 +14,11 @@ const invitationsRouter = Router();
 invitationsRouter.get("/", authenticateAdmin, listInvitationsController);
 invitationsRouter.post("/", authenticateAdmin, createInvitationController);
 invitationsRouter.get("/:id", authenticateAdmin, getInvitationController);
+invitationsRouter.patch(
+  "/:id/capacity",
+  authenticateAdmin,
+  changeInvitationCapacityController,
+);
 invitationsRouter.patch("/:id", authenticateAdmin, updateInvitationController);
 
 export default invitationsRouter;
