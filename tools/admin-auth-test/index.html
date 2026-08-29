@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Prueba local de autenticación administrativa</title>
+    <style>
+      :root { color-scheme: light; font-family: system-ui, sans-serif; }
+      body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #f5f2ed; color: #27231f; }
+      main { width: min(28rem, calc(100% - 2rem)); padding: 2rem; border-radius: 1rem; background: white; box-shadow: 0 1rem 3rem #2f26151a; }
+      h1 { margin-top: 0; font-size: 1.35rem; }
+      button { width: 100%; margin-top: 0.75rem; padding: 0.8rem 1rem; border: 0; border-radius: 0.6rem; background: #2f5d50; color: white; font: inherit; cursor: pointer; }
+      button:disabled { cursor: not-allowed; opacity: 0.5; }
+      dl { display: grid; grid-template-columns: auto 1fr; gap: 0.5rem 1rem; margin: 1.5rem 0 0; }
+      dt { font-weight: 700; }
+      dd { margin: 0; overflow-wrap: anywhere; }
+      #status { min-height: 1.5rem; margin-bottom: 0; font-size: 0.9rem; }
+      [hidden] { display: none; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Autenticación administrativa local</h1>
+      <button id="sign-in" type="button">Iniciar sesión con Google</button>
+
+      <section id="user-details" hidden>
+        <dl>
+          <dt>Nombre</dt><dd id="name"></dd>
+          <dt>Email</dt><dd id="email"></dd>
+          <dt>UID</dt><dd id="uid"></dd>
+        </dl>
+        <button id="copy-token" type="button" disabled>Copiar ID Token</button>
+      </section>
+
+      <p id="status" role="status" aria-live="polite"></p>
+    </main>
+    <script type="module" src="/main.js"></script>
+  </body>
+</html>
