@@ -1,4 +1,8 @@
 const PUBLIC_HTTP_ERRORS = {
+  FORBIDDEN: {
+    statusCode: 403,
+    message: "Forbidden",
+  },
   INVITATION_NOT_FOUND: {
     statusCode: 404,
     message: "Invitation not found",
