@@ -1,4 +1,4 @@
-import { Timestamp } from "firebase-admin/firestore";
+import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const firestoreMocks = vi.hoisted(() => ({
@@ -6,6 +6,7 @@ const firestoreMocks = vi.hoisted(() => ({
   document: vi.fn(),
   getDocument: vi.fn(),
   listDocuments: vi.fn(),
+  updateDocument: vi.fn(),
 }));
 
 const idMocks = vi.hoisted(() => ({ generateInvitationId: vi.fn() }));
@@ -32,6 +33,7 @@ import {
   getInvitationById,
   listInvitations,
   mapInvitationDocument,
+  updateInvitation,
 } from "../src/services/invitations.service";
 import { createInvitationData } from "../src/services/invitationModel.service";
 
@@ -101,6 +103,7 @@ describe("Firestore reads", () => {
     firestoreMocks.document.mockReturnValue({
       create: firestoreMocks.createDocument,
       get: firestoreMocks.getDocument,
+      update: firestoreMocks.updateDocument,
     });
   });
 
@@ -134,6 +137,7 @@ describe("createInvitation", () => {
     firestoreMocks.document.mockReturnValue({
       create: firestoreMocks.createDocument,
       get: firestoreMocks.getDocument,
+      update: firestoreMocks.updateDocument,
     });
     firestoreMocks.createDocument.mockResolvedValue(undefined);
   });
@@ -198,5 +202,87 @@ describe("createInvitation", () => {
     );
     expect(idMocks.generateInvitationId).toHaveBeenCalledTimes(10);
     expect(firestoreMocks.createDocument).not.toHaveBeenCalled();
+  });
+});
+
+describe("updateInvitation", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    firestoreMocks.document.mockReturnValue({
+      create: firestoreMocks.createDocument,
+      get: firestoreMocks.getDocument,
+      update: firestoreMocks.updateDocument,
+    });
+    firestoreMocks.updateDocument.mockResolvedValue(undefined);
+  });
+
+  function mockExistingAndUpdated(overrides: Record<string, unknown> = {}) {
+    firestoreMocks.getDocument
+      .mockResolvedValueOnce({ exists: true })
+      .mockResolvedValueOnce({
+        exists: true,
+        id: "KM8P2XQ7",
+        data: () => ({ ...validDocument(), ...overrides }),
+      });
+  }
+
+  it("updates displayName without guests or maxGuests", async () => {
+    mockExistingAndUpdated({ displayName: "Familia Actualizada" });
+    const result = await updateInvitation("KM8P2XQ7", {
+      displayName: "Familia Actualizada",
+    });
+
+    expect(result?.displayName).toBe("Familia Actualizada");
+    expect(firestoreMocks.updateDocument).toHaveBeenCalledWith({
+      displayName: "Familia Actualizada",
+      updatedAt: expect.anything(),
+    });
+    const changes = firestoreMocks.updateDocument.mock.calls[0][0];
+    expect(changes).not.toHaveProperty("guests");
+    expect(changes).not.toHaveProperty("maxGuests");
+  });
+
+  it("updates replacementsAllowed", async () => {
+    mockExistingAndUpdated({ replacementsAllowed: false });
+    await updateInvitation("KM8P2XQ7", { replacementsAllowed: false });
+    expect(firestoreMocks.updateDocument).toHaveBeenCalledWith({
+      replacementsAllowed: false,
+      updatedAt: expect.anything(),
+    });
+  });
+
+  it("writes editOverrideUntil as a Timestamp", async () => {
+    const date = new Date("2026-09-01T12:30:00.000Z");
+    mockExistingAndUpdated({ editOverrideUntil: Timestamp.fromDate(date) });
+    await updateInvitation("KM8P2XQ7", { editOverrideUntil: date });
+    expect(firestoreMocks.updateDocument).toHaveBeenCalledWith({
+      editOverrideUntil: Timestamp.fromDate(date),
+      updatedAt: expect.anything(),
+    });
+  });
+
+  it("writes null editOverrideUntil", async () => {
+    mockExistingAndUpdated({ editOverrideUntil: null });
+    await updateInvitation("KM8P2XQ7", { editOverrideUntil: null });
+    expect(firestoreMocks.updateDocument).toHaveBeenCalledWith({
+      editOverrideUntil: null,
+      updatedAt: expect.anything(),
+    });
+  });
+
+  it("uses serverTimestamp for updatedAt", async () => {
+    mockExistingAndUpdated();
+    await updateInvitation("KM8P2XQ7", { replacementsAllowed: true });
+    expect(firestoreMocks.updateDocument.mock.calls[0][0].updatedAt).toEqual(
+      FieldValue.serverTimestamp(),
+    );
+  });
+
+  it("returns null without updating when the invitation does not exist", async () => {
+    firestoreMocks.getDocument.mockResolvedValueOnce({ exists: false });
+    await expect(
+      updateInvitation("missing", { displayName: "Familia" }),
+    ).resolves.toBeNull();
+    expect(firestoreMocks.updateDocument).not.toHaveBeenCalled();
   });
 });

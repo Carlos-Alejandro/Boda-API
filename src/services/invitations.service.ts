@@ -8,6 +8,7 @@ import type {
   GuestType,
   Invitation,
   RsvpStatus,
+  UpdateInvitationInput,
 } from "../types/invitation";
 import { generateInvitationId } from "./invitationId.service";
 import { createInvitationData } from "./invitationModel.service";
@@ -146,4 +147,33 @@ export async function createInvitation(
   }
 
   throw new Error("Could not generate a unique invitation ID");
+}
+
+export async function updateInvitation(
+  id: string,
+  input: UpdateInvitationInput,
+): Promise<Invitation | null> {
+  const document = firestore.collection("invitations").doc(id);
+  const existing = await document.get();
+  if (!existing.exists) return null;
+
+  const changes: Record<string, unknown> = {
+    updatedAt: FieldValue.serverTimestamp(),
+  };
+  if (input.displayName !== undefined) changes.displayName = input.displayName;
+  if (input.replacementsAllowed !== undefined) {
+    changes.replacementsAllowed = input.replacementsAllowed;
+  }
+  if (input.editOverrideUntil !== undefined) {
+    changes.editOverrideUntil =
+      input.editOverrideUntil === null
+        ? null
+        : Timestamp.fromDate(input.editOverrideUntil);
+  }
+
+  await document.update(changes);
+
+  const updated = await document.get();
+  if (!updated.exists) throw new Error("Updated invitation could not be read back");
+  return mapInvitationDocument(updated.id, updated.data());
 }

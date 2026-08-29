@@ -12,4 +12,13 @@ describe("invitations routes", () => {
     expect(postRoute).toBeDefined();
     expect(postRoute?.route?.stack[0].handle).toBe(authenticateAdmin);
   });
+
+  it("protects PATCH /:id with authenticateAdmin", () => {
+    const patchRoute = invitationsRouter.stack.find(
+      (layer) => layer.route?.path === "/:id" && layer.route.methods.patch,
+    );
+
+    expect(patchRoute).toBeDefined();
+    expect(patchRoute?.route?.stack[0].handle).toBe(authenticateAdmin);
+  });
 });

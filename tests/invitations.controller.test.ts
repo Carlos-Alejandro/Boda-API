@@ -5,6 +5,7 @@ const serviceMocks = vi.hoisted(() => ({
   createInvitation: vi.fn(),
   getInvitationById: vi.fn(),
   listInvitations: vi.fn(),
+  updateInvitation: vi.fn(),
 }));
 
 vi.mock("../src/services/invitations.service", () => serviceMocks);
@@ -13,6 +14,7 @@ import {
   createInvitationController,
   getInvitationController,
   listInvitationsController,
+  updateInvitationController,
 } from "../src/controllers/invitations.controller";
 
 function responseMock() {
@@ -113,5 +115,51 @@ describe("invitations controllers", () => {
     expect(response.json).toHaveBeenCalledWith(
       expect.objectContaining({ id: "AB2CD3EF", updatedAt: "2026-08-29T10:00:00.000Z" }),
     );
+  });
+
+  it("returns 404 when updating a missing invitation", async () => {
+    serviceMocks.updateInvitation.mockResolvedValue(null);
+    const response = responseMock();
+    await updateInvitationController(
+      { params: { id: "missing" }, body: { displayName: "Familia" } } as Request<{ id: string }>,
+      response,
+    );
+    expect(response.status).toHaveBeenCalledWith(404);
+  });
+
+  it("returns 400 for an invalid update body", async () => {
+    const response = responseMock();
+    await updateInvitationController(
+      { params: { id: "KM8P2XQ7" }, body: { guests: [] } } as Request<{ id: string }>,
+      response,
+    );
+    expect(response.status).toHaveBeenCalledWith(400);
+    expect(serviceMocks.updateInvitation).not.toHaveBeenCalled();
+  });
+
+  it("returns 200 after a valid update", async () => {
+    serviceMocks.updateInvitation.mockResolvedValue({
+      id: "KM8P2XQ7",
+      displayName: "Familia Actualizada",
+      maxGuests: 2,
+      replacementsAllowed: true,
+      rsvpStatus: "confirmed",
+      message: "",
+      updatedAt: new Date("2026-08-29T12:00:00.000Z"),
+      editOverrideUntil: null,
+      guests: [],
+    });
+    const response = responseMock();
+    await updateInvitationController(
+      {
+        params: { id: "KM8P2XQ7" },
+        body: { displayName: "  Familia Actualizada  " },
+      } as Request<{ id: string }>,
+      response,
+    );
+    expect(serviceMocks.updateInvitation).toHaveBeenCalledWith("KM8P2XQ7", {
+      displayName: "Familia Actualizada",
+    });
+    expect(response.status).toHaveBeenCalledWith(200);
   });
 });

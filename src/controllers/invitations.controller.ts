@@ -4,10 +4,12 @@ import {
   createInvitation,
   getInvitationById,
   listInvitations,
+  updateInvitation,
 } from "../services/invitations.service";
 import { DomainError } from "../errors/DomainError";
 import type { Invitation } from "../types/invitation";
 import { parseCreateInvitationInput } from "../validation/createInvitationInput";
+import { parseUpdateInvitationInput } from "../validation/updateInvitationInput";
 
 function toHttpInvitation(invitation: Invitation) {
   return {
@@ -59,6 +61,27 @@ export async function createInvitationController(
     const input = parseCreateInvitationInput(request.body);
     const invitation = await createInvitation(input);
     response.status(201).json(toHttpInvitation(invitation));
+  } catch (error) {
+    if (error instanceof DomainError) {
+      response.status(400).json({ error: error.message });
+      return;
+    }
+    response.status(500).json({ error: "Internal server error" });
+  }
+}
+
+export async function updateInvitationController(
+  request: Request<{ id: string }>,
+  response: Response,
+): Promise<void> {
+  try {
+    const input = parseUpdateInvitationInput(request.body);
+    const invitation = await updateInvitation(request.params.id, input);
+    if (!invitation) {
+      response.status(404).json({ error: "Invitation not found" });
+      return;
+    }
+    response.status(200).json(toHttpInvitation(invitation));
   } catch (error) {
     if (error instanceof DomainError) {
       response.status(400).json({ error: error.message });

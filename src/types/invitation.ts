@@ -30,3 +30,9 @@ export interface CreateInvitationInput {
   openSlots: number;
   replacementsAllowed: boolean;
 }
+
+export interface UpdateInvitationInput {
+  displayName?: string;
+  replacementsAllowed?: boolean;
+  editOverrideUntil?: Date | null;
+}
