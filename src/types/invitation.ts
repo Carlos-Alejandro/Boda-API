@@ -26,6 +26,12 @@ export interface Invitation {
 
 export type InvitationData = Omit<Invitation, "id">;
 
+export interface ListInvitationFilters {
+  search?: string;
+  rsvpStatus?: RsvpStatus;
+  archived?: boolean;
+}
+
 export interface CreateInvitationInput {
   displayName: string;
   knownGuests: Array<{ name: string }>;

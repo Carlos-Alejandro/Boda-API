@@ -16,6 +16,7 @@ import { parseCreateInvitationInput } from "../validation/createInvitationInput"
 import { parseUpdateInvitationInput } from "../validation/updateInvitationInput";
 import { parseChangeInvitationCapacityInput } from "../validation/changeInvitationCapacityInput";
 import { parseGuestIndex } from "../validation/guestIndex";
+import { parseListInvitationsQuery } from "../validation/listInvitationsQuery";
 
 function toHttpInvitation(invitation: Invitation) {
   return {
@@ -27,17 +28,22 @@ function toHttpInvitation(invitation: Invitation) {
 }
 
 export async function listInvitationsController(
-  _request: Request,
+  request: Request,
   response: Response,
   next: NextFunction,
 ): Promise<void> {
   try {
-    const invitations = await listInvitations();
+    const filters = parseListInvitationsQuery(request.query);
+    const invitations = await listInvitations(filters);
     response.status(200).json({
       items: invitations.map(toHttpInvitation),
       total: invitations.length,
     });
   } catch (error) {
+    if (error instanceof DomainError) {
+      response.status(400).json({ error: error.message });
+      return;
+    }
     next(error);
   }
 }

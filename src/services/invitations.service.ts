@@ -7,6 +7,7 @@ import type {
   Guest,
   GuestType,
   Invitation,
+  ListInvitationFilters,
   RsvpStatus,
   UpdateInvitationInput,
 } from "../types/invitation";
@@ -126,9 +127,37 @@ export function mapInvitationDocument(id: string, value: unknown): Invitation {
   };
 }
 
-export async function listInvitations(): Promise<Invitation[]> {
+export async function listInvitations(
+  filters: ListInvitationFilters = {},
+): Promise<Invitation[]> {
   const snapshot = await firestore.collection("invitations").get();
-  return snapshot.docs.map((document) => mapInvitationDocument(document.id, document.data()));
+  const invitations = snapshot.docs.map((document) =>
+    mapInvitationDocument(document.id, document.data()),
+  );
+  const normalizedSearch = filters.search?.trim().toLowerCase();
+
+  return invitations.filter((invitation) => {
+    if (
+      normalizedSearch &&
+      !invitation.id.toLowerCase().includes(normalizedSearch) &&
+      !invitation.displayName.toLowerCase().includes(normalizedSearch)
+    ) {
+      return false;
+    }
+    if (
+      filters.rsvpStatus !== undefined &&
+      invitation.rsvpStatus !== filters.rsvpStatus
+    ) {
+      return false;
+    }
+    if (
+      filters.archived !== undefined &&
+      invitation.isArchived !== filters.archived
+    ) {
+      return false;
+    }
+    return true;
+  });
 }
 
 export async function getInvitationById(id: string): Promise<Invitation | null> {

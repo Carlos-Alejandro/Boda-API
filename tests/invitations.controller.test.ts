@@ -68,7 +68,7 @@ describe("invitations controllers", () => {
     const response = responseMock();
 
     await listInvitationsController(
-      {} as Request,
+      { query: {} } as Request,
       response,
       vi.fn() as NextFunction,
     );
@@ -83,6 +83,44 @@ describe("invitations controllers", () => {
       ],
       total: 1,
     });
+    expect(serviceMocks.listInvitations).toHaveBeenCalledWith({});
+  });
+
+  it("parses and forwards list filters without changing the response format", async () => {
+    serviceMocks.listInvitations.mockResolvedValue([]);
+    const response = responseMock();
+
+    await listInvitationsController(
+      {
+        query: {
+          search: "  Julia  ",
+          rsvpStatus: "confirmed",
+          archived: "false",
+        },
+      } as unknown as Request,
+      response,
+      vi.fn() as NextFunction,
+    );
+
+    expect(serviceMocks.listInvitations).toHaveBeenCalledWith({
+      search: "Julia",
+      rsvpStatus: "confirmed",
+      archived: false,
+    });
+    expect(response.json).toHaveBeenCalledWith({ items: [], total: 0 });
+  });
+
+  it("returns 400 for invalid or repeated list query parameters", async () => {
+    const response = responseMock();
+
+    await listInvitationsController(
+      { query: { archived: ["true", "false"] } } as unknown as Request,
+      response,
+      vi.fn() as NextFunction,
+    );
+
+    expect(response.status).toHaveBeenCalledWith(400);
+    expect(serviceMocks.listInvitations).not.toHaveBeenCalled();
   });
 
   it("returns 400 for an invalid create body", async () => {

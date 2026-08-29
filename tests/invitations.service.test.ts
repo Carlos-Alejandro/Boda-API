@@ -164,6 +164,126 @@ describe("Firestore reads", () => {
       expect.objectContaining({ id: "KM8P2XQ7" }),
     ]);
   });
+
+  function listDocument(
+    id: string,
+    displayName: string,
+    rsvpStatus: "pending" | "confirmed" | "partial" | "declined",
+    isArchived?: boolean,
+  ) {
+    return {
+      id,
+      data: () => ({
+        ...validDocument(),
+        displayName,
+        rsvpStatus,
+        ...(isArchived === undefined
+          ? {}
+          : { isArchived, archivedAt: null }),
+      }),
+    };
+  }
+
+  function mockInvitationList() {
+    firestoreMocks.listDocuments.mockResolvedValue({
+      docs: [
+        listDocument("JW2NRV5C", "Julia & Jordi", "confirmed", false),
+        listDocument("LEGACY22", "Familia Perez", "pending"),
+        listDocument("ARCHIVE1", "Julia Archivada", "partial", true),
+        listDocument("ACTIVE44", "Familia Lopez", "declined", false),
+      ],
+    });
+  }
+
+  it("returns every mapped invitation without filters", async () => {
+    mockInvitationList();
+    const result = await listInvitations();
+    expect(result.map(({ id }) => id)).toEqual([
+      "JW2NRV5C",
+      "LEGACY22",
+      "ARCHIVE1",
+      "ACTIVE44",
+    ]);
+  });
+
+  it.each([
+    ["Julia & Jordi", ["JW2NRV5C"]],
+    ["julia", ["JW2NRV5C", "ARCHIVE1"]],
+    ["JuLiA", ["JW2NRV5C", "ARCHIVE1"]],
+    ["  Julia & Jordi  ", ["JW2NRV5C"]],
+    ["jw2", ["JW2NRV5C"]],
+  ] as const)("filters search=%s by id or displayName", async (search, ids) => {
+    mockInvitationList();
+    const result = await listInvitations({ search });
+    expect(result.map(({ id }) => id)).toEqual(ids);
+  });
+
+  it.each([
+    ["pending", ["LEGACY22"]],
+    ["confirmed", ["JW2NRV5C"]],
+    ["partial", ["ARCHIVE1"]],
+    ["declined", ["ACTIVE44"]],
+  ] as const)("filters rsvpStatus=%s", async (rsvpStatus, ids) => {
+    mockInvitationList();
+    const result = await listInvitations({ rsvpStatus });
+    expect(result.map(({ id }) => id)).toEqual(ids);
+  });
+
+  it("filters archived=true and excludes legacy documents", async () => {
+    mockInvitationList();
+    const result = await listInvitations({ archived: true });
+    expect(result.map(({ id }) => id)).toEqual(["ARCHIVE1"]);
+  });
+
+  it("filters archived=false and includes legacy documents", async () => {
+    mockInvitationList();
+    const result = await listInvitations({ archived: false });
+    expect(result.map(({ id }) => id)).toEqual([
+      "JW2NRV5C",
+      "LEGACY22",
+      "ACTIVE44",
+    ]);
+  });
+
+  it.each([
+    [{ search: "Julia", rsvpStatus: "confirmed" as const }, ["JW2NRV5C"]],
+    [{ search: "Julia", archived: true }, ["ARCHIVE1"]],
+    [{ rsvpStatus: "pending" as const, archived: false }, ["LEGACY22"]],
+    [
+      { search: "Julia", rsvpStatus: "confirmed" as const, archived: false },
+      ["JW2NRV5C"],
+    ],
+    [
+      { search: "Julia", rsvpStatus: "declined" as const, archived: true },
+      [],
+    ],
+  ] as const)("combines filters with AND: %j", async (filters, ids) => {
+    mockInvitationList();
+    const result = await listInvitations(filters);
+    expect(result.map(({ id }) => id)).toEqual(ids);
+  });
+
+  it("maps every document before filtering", async () => {
+    firestoreMocks.listDocuments.mockResolvedValue({
+      docs: [
+        listDocument("MATCH", "Julia", "confirmed", false),
+        { id: "INVALID", data: () => ({ ...validDocument(), maxGuests: 0 }) },
+      ],
+    });
+
+    await expect(listInvitations({ search: "Julia" })).rejects.toThrow(
+      /Invalid invitation document/,
+    );
+  });
+
+  it("does not issue writes while filtering", async () => {
+    mockInvitationList();
+    await listInvitations({ search: "Julia", archived: false });
+    expect(firestoreMocks.createDocument).not.toHaveBeenCalled();
+    expect(firestoreMocks.updateDocument).not.toHaveBeenCalled();
+    expect(firestoreMocks.transactionUpdate).not.toHaveBeenCalled();
+    expect(firestoreMocks.runTransaction).not.toHaveBeenCalled();
+  });
 });
 
 describe("createInvitation", () => {

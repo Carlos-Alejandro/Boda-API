@@ -4,6 +4,15 @@ import { authenticateAdmin } from "../src/middlewares/authenticateAdmin";
 import invitationsRouter from "../src/routes/invitations";
 
 describe("invitations routes", () => {
+  it("protects GET / with authenticateAdmin", () => {
+    const getRoute = invitationsRouter.stack.find(
+      (layer) => layer.route?.path === "/" && layer.route.methods.get,
+    );
+
+    expect(getRoute).toBeDefined();
+    expect(getRoute?.route?.stack[0].handle).toBe(authenticateAdmin);
+  });
+
   it("protects POST / with authenticateAdmin", () => {
     const postRoute = invitationsRouter.stack.find(
       (layer) => layer.route?.path === "/" && layer.route.methods.post,
