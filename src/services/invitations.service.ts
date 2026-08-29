@@ -102,6 +102,11 @@ export function mapInvitationDocument(id: string, value: unknown): Invitation {
   }
   if (typeof data.message !== "string") invalidDocument(id, "message must be a string");
 
+  const isArchived = data.isArchived === undefined ? false : data.isArchived;
+  if (typeof isArchived !== "boolean") {
+    invalidDocument(id, "isArchived must be a boolean when present");
+  }
+
   return {
     id,
     displayName: data.displayName,
@@ -109,6 +114,12 @@ export function mapInvitationDocument(id: string, value: unknown): Invitation {
     replacementsAllowed: data.replacementsAllowed,
     rsvpStatus: data.rsvpStatus as RsvpStatus,
     message: data.message,
+    isArchived,
+    archivedAt: mapTimestamp(
+      id,
+      data.archivedAt === undefined ? null : data.archivedAt,
+      "archivedAt",
+    ),
     editOverrideUntil: mapTimestamp(id, data.editOverrideUntil, "editOverrideUntil"),
     updatedAt: mapTimestamp(id, data.updatedAt, "updatedAt"),
     guests: data.guests.map((guest, index) => mapGuest(id, guest, index)),
@@ -246,4 +257,42 @@ export async function restoreInvitationReplacement(
   const updated = await document.get();
   if (!updated.exists) throw new Error("Updated invitation could not be read back");
   return mapInvitationDocument(updated.id, updated.data());
+}
+
+async function setInvitationArchived(
+  id: string,
+  isArchived: boolean,
+): Promise<Invitation | null> {
+  const document = firestore.collection("invitations").doc(id);
+  const result = await firestore.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(document);
+    if (!snapshot.exists) return null;
+
+    const current = mapInvitationDocument(snapshot.id, snapshot.data());
+    if (current.isArchived === isArchived) {
+      return { invitation: current, changed: false } as const;
+    }
+
+    transaction.update(document, {
+      isArchived,
+      archivedAt: isArchived ? FieldValue.serverTimestamp() : null,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    return { invitation: current, changed: true } as const;
+  });
+
+  if (!result) return null;
+  if (!result.changed) return result.invitation;
+
+  const updated = await document.get();
+  if (!updated.exists) throw new Error("Updated invitation could not be read back");
+  return mapInvitationDocument(updated.id, updated.data());
+}
+
+export function archiveInvitation(id: string): Promise<Invitation | null> {
+  return setInvitationArchived(id, true);
+}
+
+export function restoreArchivedInvitation(id: string): Promise<Invitation | null> {
+  return setInvitationArchived(id, false);
 }

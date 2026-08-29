@@ -2,22 +2,26 @@ import type { NextFunction, Request, Response } from "express";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const serviceMocks = vi.hoisted(() => ({
+  archiveInvitation: vi.fn(),
   changeCapacity: vi.fn(),
   createInvitation: vi.fn(),
   getInvitationById: vi.fn(),
   listInvitations: vi.fn(),
   restoreInvitationReplacement: vi.fn(),
+  restoreArchivedInvitation: vi.fn(),
   updateInvitation: vi.fn(),
 }));
 
 vi.mock("../src/services/invitations.service", () => serviceMocks);
 
 import {
+  archiveInvitationController,
   changeInvitationCapacityController,
   createInvitationController,
   getInvitationController,
   listInvitationsController,
   restoreInvitationReplacementController,
+  restoreArchivedInvitationController,
   updateInvitationController,
 } from "../src/controllers/invitations.controller";
 
@@ -259,5 +263,78 @@ describe("invitations controllers", () => {
       0,
     );
     expect(response.status).toHaveBeenCalledWith(200);
+  });
+
+  it("returns 200 after archiving", async () => {
+    serviceMocks.archiveInvitation.mockResolvedValue({
+      id: "KM8P2XQ7",
+      displayName: "Julia & Jordi",
+      maxGuests: 1,
+      replacementsAllowed: true,
+      rsvpStatus: "confirmed",
+      message: "",
+      isArchived: true,
+      archivedAt: new Date("2026-08-29T12:00:00.000Z"),
+      updatedAt: new Date("2026-08-29T12:00:00.000Z"),
+      editOverrideUntil: null,
+      guests: [],
+    });
+    const response = responseMock();
+    await archiveInvitationController(
+      { params: { id: "KM8P2XQ7" } } as Request<{ id: string }>,
+      response,
+    );
+    expect(response.status).toHaveBeenCalledWith(200);
+    expect(response.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        isArchived: true,
+        archivedAt: "2026-08-29T12:00:00.000Z",
+      }),
+    );
+  });
+
+  it("returns 404 when archive target does not exist", async () => {
+    serviceMocks.archiveInvitation.mockResolvedValue(null);
+    const response = responseMock();
+    await archiveInvitationController(
+      { params: { id: "missing" } } as Request<{ id: string }>,
+      response,
+    );
+    expect(response.status).toHaveBeenCalledWith(404);
+  });
+
+  it("returns 200 after restoring an archived invitation", async () => {
+    serviceMocks.restoreArchivedInvitation.mockResolvedValue({
+      id: "KM8P2XQ7",
+      displayName: "Julia & Jordi",
+      maxGuests: 1,
+      replacementsAllowed: true,
+      rsvpStatus: "confirmed",
+      message: "",
+      isArchived: false,
+      archivedAt: null,
+      updatedAt: new Date("2026-08-29T12:00:00.000Z"),
+      editOverrideUntil: null,
+      guests: [],
+    });
+    const response = responseMock();
+    await restoreArchivedInvitationController(
+      { params: { id: "KM8P2XQ7" } } as Request<{ id: string }>,
+      response,
+    );
+    expect(response.status).toHaveBeenCalledWith(200);
+    expect(response.json).toHaveBeenCalledWith(
+      expect.objectContaining({ isArchived: false, archivedAt: null }),
+    );
+  });
+
+  it("returns 404 when restore target does not exist", async () => {
+    serviceMocks.restoreArchivedInvitation.mockResolvedValue(null);
+    const response = responseMock();
+    await restoreArchivedInvitationController(
+      { params: { id: "missing" } } as Request<{ id: string }>,
+      response,
+    );
+    expect(response.status).toHaveBeenCalledWith(404);
   });
 });

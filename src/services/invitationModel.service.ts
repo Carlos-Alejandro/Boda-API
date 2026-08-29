@@ -81,6 +81,8 @@ export function createInvitationData(
     replacementsAllowed: input.replacementsAllowed,
     rsvpStatus: "pending",
     message: "",
+    isArchived: false,
+    archivedAt: null,
     updatedAt: null,
     editOverrideUntil: null,
     guests,

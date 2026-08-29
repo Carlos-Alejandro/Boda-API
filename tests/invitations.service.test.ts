@@ -38,12 +38,14 @@ vi.mock("../src/services/invitationModel.service", async (importOriginal) => {
 
 import { DomainError } from "../src/errors/DomainError";
 import {
+  archiveInvitation,
   changeCapacity,
   createInvitation,
   getInvitationById,
   listInvitations,
   mapInvitationDocument,
   restoreInvitationReplacement,
+  restoreArchivedInvitation,
   updateInvitation,
 } from "../src/services/invitations.service";
 import {
@@ -83,6 +85,32 @@ describe("mapInvitationDocument", () => {
     const invitation = mapInvitationDocument("KM8P2XQ7", validDocument());
     expect(invitation.updatedAt).toEqual(new Date("2026-08-01T10:00:00.000Z"));
     expect(invitation.editOverrideUntil).toBeNull();
+  });
+
+  it("treats legacy documents without archive fields as active", () => {
+    const invitation = mapInvitationDocument("legacy", validDocument());
+    expect(invitation).toMatchObject({ isArchived: false, archivedAt: null });
+  });
+
+  it("maps archived and explicitly active documents", () => {
+    const archivedAt = Timestamp.fromDate(new Date("2026-08-20T10:00:00.000Z"));
+    expect(
+      mapInvitationDocument("archived", {
+        ...validDocument(),
+        isArchived: true,
+        archivedAt,
+      }),
+    ).toMatchObject({
+      isArchived: true,
+      archivedAt: new Date("2026-08-20T10:00:00.000Z"),
+    });
+    expect(
+      mapInvitationDocument("active", {
+        ...validDocument(),
+        isArchived: false,
+        archivedAt: null,
+      }),
+    ).toMatchObject({ isArchived: false, archivedAt: null });
   });
 
   it("rejects guests.length different from maxGuests", () => {
@@ -176,6 +204,8 @@ describe("createInvitation", () => {
     expect(firestoreMocks.createDocument).toHaveBeenCalledOnce();
     expect(firestoreMocks.createDocument).toHaveBeenCalledWith(
       expect.objectContaining({
+        archivedAt: null,
+        isArchived: false,
         rsvpStatus: "pending",
         maxGuests: 2,
         guests: [
@@ -601,6 +631,109 @@ describe("restoreInvitationReplacement", () => {
   it("returns null without writing when the invitation does not exist", async () => {
     firestoreMocks.transactionGet.mockResolvedValueOnce({ exists: false });
     await expect(restoreInvitationReplacement("missing", 0)).resolves.toBeNull();
+    expect(firestoreMocks.transactionUpdate).not.toHaveBeenCalled();
+  });
+});
+
+describe("archive and restore", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    firestoreMocks.document.mockReturnValue({ get: firestoreMocks.getDocument });
+    firestoreMocks.runTransaction.mockImplementation(async (callback) =>
+      callback({
+        get: firestoreMocks.transactionGet,
+        update: firestoreMocks.transactionUpdate,
+      }),
+    );
+  });
+
+  function archiveSnapshot(
+    isArchived: boolean | undefined,
+    archivedAt: Timestamp | null | undefined,
+  ) {
+    return {
+      exists: true,
+      id: "KM8P2XQ7",
+      data: () => ({
+        ...validDocument(),
+        ...(isArchived === undefined ? {} : { isArchived }),
+        ...(archivedAt === undefined ? {} : { archivedAt }),
+      }),
+    };
+  }
+
+  it("archives an active legacy invitation and writes only archive fields", async () => {
+    const archivedAt = Timestamp.fromDate(new Date("2026-08-29T12:00:00.000Z"));
+    firestoreMocks.transactionGet.mockResolvedValueOnce(
+      archiveSnapshot(undefined, undefined),
+    );
+    firestoreMocks.getDocument.mockResolvedValueOnce(archiveSnapshot(true, archivedAt));
+
+    const result = await archiveInvitation("KM8P2XQ7");
+
+    expect(firestoreMocks.transactionUpdate.mock.calls[0][1]).toEqual({
+      isArchived: true,
+      archivedAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    expect(result).toMatchObject({
+      isArchived: true,
+      archivedAt: new Date("2026-08-29T12:00:00.000Z"),
+      maxGuests: 2,
+      message: "Private message",
+      rsvpStatus: "confirmed",
+    });
+  });
+
+  it("returns an already archived invitation without writing or rereading", async () => {
+    const archivedAt = Timestamp.fromDate(new Date("2026-08-29T12:00:00.000Z"));
+    firestoreMocks.transactionGet.mockResolvedValueOnce(archiveSnapshot(true, archivedAt));
+    await expect(archiveInvitation("KM8P2XQ7")).resolves.toMatchObject({
+      isArchived: true,
+    });
+    expect(firestoreMocks.transactionUpdate).not.toHaveBeenCalled();
+    expect(firestoreMocks.getDocument).not.toHaveBeenCalled();
+  });
+
+  it("restores an archived invitation and writes only archive fields", async () => {
+    const archivedAt = Timestamp.fromDate(new Date("2026-08-29T12:00:00.000Z"));
+    firestoreMocks.transactionGet.mockResolvedValueOnce(archiveSnapshot(true, archivedAt));
+    firestoreMocks.getDocument.mockResolvedValueOnce(archiveSnapshot(false, null));
+
+    const result = await restoreArchivedInvitation("KM8P2XQ7");
+
+    expect(firestoreMocks.transactionUpdate.mock.calls[0][1]).toEqual({
+      isArchived: false,
+      archivedAt: null,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    expect(result).toMatchObject({
+      isArchived: false,
+      archivedAt: null,
+      maxGuests: 2,
+      message: "Private message",
+      replacementsAllowed: true,
+    });
+  });
+
+  it("returns an already active legacy invitation without writing or rereading", async () => {
+    firestoreMocks.transactionGet.mockResolvedValueOnce(
+      archiveSnapshot(undefined, undefined),
+    );
+    await expect(restoreArchivedInvitation("KM8P2XQ7")).resolves.toMatchObject({
+      isArchived: false,
+      archivedAt: null,
+    });
+    expect(firestoreMocks.transactionUpdate).not.toHaveBeenCalled();
+    expect(firestoreMocks.getDocument).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["archive", archiveInvitation],
+    ["restore", restoreArchivedInvitation],
+  ])("returns null when %s target does not exist", async (_name, operation) => {
+    firestoreMocks.transactionGet.mockResolvedValueOnce({ exists: false });
+    await expect(operation("missing")).resolves.toBeNull();
     expect(firestoreMocks.transactionUpdate).not.toHaveBeenCalled();
   });
 });

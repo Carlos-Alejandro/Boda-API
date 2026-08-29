@@ -39,7 +39,7 @@ describe("parseUpdateInvitationInput", () => {
     expect(() => parseUpdateInvitationInput({})).toThrow(/At least one field/);
   });
 
-  it.each(["id", "maxGuests", "guests", "rsvpStatus", "message", "updatedAt"])(
+  it.each(["id", "maxGuests", "guests", "rsvpStatus", "message", "updatedAt", "isArchived", "archivedAt"])(
     "rejects forbidden field %s",
     (field) => {
       expect(() => parseUpdateInvitationInput({ [field]: "forced" })).toThrow(

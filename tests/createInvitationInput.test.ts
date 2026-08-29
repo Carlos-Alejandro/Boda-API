@@ -28,7 +28,7 @@ describe("parseCreateInvitationInput", () => {
     );
   });
 
-  it.each(["id", "maxGuests", "guests", "rsvpStatus", "message", "updatedAt", "editOverrideUntil"])(
+  it.each(["id", "maxGuests", "guests", "rsvpStatus", "message", "updatedAt", "editOverrideUntil", "isArchived", "archivedAt"])(
     "rejects backend-controlled field %s",
     (field) => {
       expect(() => parseCreateInvitationInput({ ...validBody, [field]: "forced" })).toThrow(

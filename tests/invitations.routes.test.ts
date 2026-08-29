@@ -41,4 +41,21 @@ describe("invitations routes", () => {
     expect(restoreRoute).toBeDefined();
     expect(restoreRoute?.route?.stack[0].handle).toBe(authenticateAdmin);
   });
+
+  it.each([
+    "/:id/archive",
+    "/:id/restore",
+  ])("protects POST %s with authenticateAdmin", (path) => {
+    const route = invitationsRouter.stack.find(
+      (layer) => layer.route?.path === path && layer.route.methods.post,
+    );
+    expect(route).toBeDefined();
+    expect(route?.route?.stack[0].handle).toBe(authenticateAdmin);
+  });
+
+  it("does not expose an administrative DELETE route", () => {
+    expect(
+      invitationsRouter.stack.some((layer) => layer.route?.methods.delete),
+    ).toBe(false);
+  });
 });

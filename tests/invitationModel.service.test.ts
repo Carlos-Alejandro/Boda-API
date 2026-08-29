@@ -16,6 +16,8 @@ function makeInvitation(guests: Guest[]): Invitation {
     replacementsAllowed: true,
     rsvpStatus: "partial",
     message: "Mensaje existente",
+    isArchived: false,
+    archivedAt: null,
     updatedAt: new Date("2026-01-01T00:00:00.000Z"),
     editOverrideUntil: new Date("2026-02-01T00:00:00.000Z"),
     guests,
@@ -60,6 +62,11 @@ describe("createInvitationData", () => {
     const result = createInvitationData({ displayName: "Familia", knownGuests: [{ name: "Ana" }, { name: "Luis" }], openSlots: 2, replacementsAllowed: true });
     expect(result.maxGuests).toBe(4);
     expect(result.guests).toHaveLength(4);
+  });
+
+  it("creates invitations as active and not archived", () => {
+    const result = createInvitationData({ displayName: "Familia", knownGuests: [{ name: "Ana" }], openSlots: 0, replacementsAllowed: true });
+    expect(result).toMatchObject({ isArchived: false, archivedAt: null });
   });
 
   it("derives shortName from the normalized first word", () => {

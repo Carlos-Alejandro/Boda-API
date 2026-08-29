@@ -17,6 +17,8 @@ export interface Invitation {
   replacementsAllowed: boolean;
   rsvpStatus: RsvpStatus;
   message: string;
+  isArchived: boolean;
+  archivedAt: Date | null;
   updatedAt: Date | null;
   editOverrideUntil: Date | null;
   guests: Guest[];

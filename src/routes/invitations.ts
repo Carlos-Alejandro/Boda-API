@@ -1,11 +1,13 @@
 import { Router } from "express";
 
 import {
+  archiveInvitationController,
   changeInvitationCapacityController,
   createInvitationController,
   getInvitationController,
   listInvitationsController,
   restoreInvitationReplacementController,
+  restoreArchivedInvitationController,
   updateInvitationController,
 } from "../controllers/invitations.controller";
 import { authenticateAdmin } from "../middlewares/authenticateAdmin";
@@ -18,6 +20,16 @@ invitationsRouter.post(
   "/:id/guests/:guestIndex/restore-replacement",
   authenticateAdmin,
   restoreInvitationReplacementController,
+);
+invitationsRouter.post(
+  "/:id/archive",
+  authenticateAdmin,
+  archiveInvitationController,
+);
+invitationsRouter.post(
+  "/:id/restore",
+  authenticateAdmin,
+  restoreArchivedInvitationController,
 );
 invitationsRouter.get("/:id", authenticateAdmin, getInvitationController);
 invitationsRouter.patch(
