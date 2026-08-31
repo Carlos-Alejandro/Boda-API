@@ -8,7 +8,6 @@ const docsRouter = Router();
 docsRouter.get("/openapi.json", (_request, response) => {
   response.status(200).json(openApiDocument);
 });
-docsRouter.get("/docs", swaggerUi.setup(openApiDocument));
-docsRouter.use("/docs", swaggerUi.serve);
+docsRouter.use("/docs", swaggerUi.serve, swaggerUi.setup(openApiDocument));
 
 export default docsRouter;
