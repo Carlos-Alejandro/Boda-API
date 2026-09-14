@@ -5,6 +5,7 @@ import {
   changeInvitationCapacity,
   createInvitationData,
   restoreReplacement,
+  removeGuest,
 } from "../src/services/invitationModel.service";
 import type { Guest, Invitation } from "../src/types/invitation";
 
@@ -175,5 +176,44 @@ describe("restoreReplacement", () => {
 
   it("rejects a replacement without a valid originalName", () => {
     expect(() => restoreReplacement({ ...replacementGuest(), originalName: "   " })).toThrow(DomainError);
+  });
+});
+
+
+describe("removeGuest", () => {
+  it.each([
+    knownGuest("Edgar", true), knownGuest("Edgar", false), knownGuest("Edgar", null),
+    openGuest("", true), openGuest("", false), openGuest("", null),
+    openGuest("Carlos", true), openGuest("Carlos", false), openGuest("Carlos", null),
+  ])("removes $type with name '$name' attending $attending without mutating input", (guest) => {
+    const input = makeInvitation([knownGuest("First"), guest, openGuest("Last")]);
+    const before = structuredClone(input);
+    const result = removeGuest(input, 1);
+    expect(result).toEqual({ ...input, maxGuests: 2, guests: [input.guests[0], input.guests[2]] });
+    expect(input).toEqual(before);
+    expect(result.guests).not.toBe(input.guests);
+  });
+  it("removes a known from an all-known invitation", () => {
+    const input = makeInvitation([knownGuest("Edgar"), knownGuest("Yoselin"), knownGuest("Americo"), knownGuest("Doricela")]);
+    expect(removeGuest(input, 3).guests.map(g => g.name)).toEqual(["Edgar", "Yoselin", "Americo"]);
+  });
+  it("allows removing the last known when an open remains", () => {
+    expect(removeGuest(makeInvitation([knownGuest(), openGuest()]), 0).guests).toEqual([openGuest()]);
+  });
+  it.each([knownGuest(), openGuest()])("rejects last $type", guest => {
+    expect(() => removeGuest(makeInvitation([guest]), 0)).toThrow("Invitation capacity must be a positive integer");
+  });
+  it("rejects replacement", () => {
+    expect(() => removeGuest(makeInvitation([replacementGuest(), knownGuest()]), 0)).toThrow("Replacement guests cannot be removed");
+  });
+  it.each([-1, 0.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1, 2])("rejects invalid index %s", index => {
+    expect(() => removeGuest(makeInvitation([knownGuest(), openGuest()]), index)).toThrow(DomainError);
+  });
+  it.each(["pending", "partial", "confirmed", "declined"] as const)("preserves RSVP %s and replacement policy", rsvpStatus => {
+    const input = { ...makeInvitation([knownGuest(), knownGuest()]), rsvpStatus, replacementsAllowed: false };
+    expect(removeGuest(input, 0)).toMatchObject({ rsvpStatus, replacementsAllowed: false });
+  });
+  it("rejects inconsistent capacity", () => {
+    expect(() => removeGuest({ ...makeInvitation([knownGuest(), openGuest()]), maxGuests: 3 }, 0)).toThrow(DomainError);
   });
 });

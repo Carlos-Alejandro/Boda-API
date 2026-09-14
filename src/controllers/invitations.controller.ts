@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 
 import {
+  removeInvitationGuest,
   archiveInvitation,
   changeCapacity,
   createInvitation,
@@ -11,14 +12,16 @@ import {
   updateInvitation,
 } from "../services/invitations.service";
 import { HttpError } from "../errors/HttpError";
-import type { Invitation } from "../types/invitation";
+import type { VersionedInvitation } from "../types/invitation";
 import { parseCreateInvitationInput } from "../validation/createInvitationInput";
 import { parseUpdateInvitationInput } from "../validation/updateInvitationInput";
 import { parseChangeInvitationCapacityInput } from "../validation/changeInvitationCapacityInput";
 import { parseGuestIndex } from "../validation/guestIndex";
 import { parseListInvitationsQuery } from "../validation/listInvitationsQuery";
+import { parseInvitationId } from "../validation/invitationId";
+import { parseInvitationVersion } from "../services/invitationVersion.service";
 
-function toHttpInvitation(invitation: Invitation) {
+function toHttpInvitation(invitation: VersionedInvitation) {
   return {
     ...invitation,
     archivedAt: invitation.archivedAt?.toISOString() ?? null,
@@ -95,7 +98,7 @@ export async function restoreInvitationReplacementController(
 }
 
 async function respondWithArchiveState(
-  invitationPromise: Promise<Invitation | null>,
+  invitationPromise: Promise<VersionedInvitation | null>,
   response: Response,
 ): Promise<void> {
   const invitation = await invitationPromise;
@@ -118,4 +121,17 @@ export async function restoreArchivedInvitationController(
     restoreArchivedInvitation(request.params.id),
     response,
   );
+}
+
+export async function removeInvitationGuestController(
+  request: Request<{ id: string; guestIndex: string }>,
+  response: Response,
+): Promise<void> {
+  const id = parseInvitationId(request.params.id);
+  const guestIndex = parseGuestIndex(request.params.guestIndex);
+  const values = request.headersDistinct["x-invitation-version"];
+  const version = parseInvitationVersion(values?.length === 1 ? values[0] : values);
+  const invitation = await removeInvitationGuest(id, guestIndex, version);
+  if (!invitation) invitationNotFound();
+  response.status(200).json(toHttpInvitation(invitation));
 }

@@ -234,6 +234,32 @@ export const openApiDocument = {
         },
       },
     },
+    "/api/admin/invitations/{id}/guests/{guestIndex}/remove": {
+      post: {
+        tags: ["Invitations"],
+        summary: "Remove a known or open guest and reduce capacity",
+        description: "Removes the selected position regardless of name or attendance. Replacements cannot be removed. At least one slot must remain. Preserves RSVP, replacementsAllowed and archive state; archived invitations are supported. Version is checked inside the transaction before using the index. On 412 reload and confirm again; never automatically retry with a newer version.",
+        security: secured,
+        parameters: [
+          { ...invitationIdParameter, description: "A single document ID segment; slashes are forbidden. Legacy IDs are supported." },
+          { name: "guestIndex", in: "path", required: true,
+            schema: { type: "integer", minimum: 0, maximum: 9007199254740991 },
+            description: "Canonical decimal index in the original guests array, without signs, spaces or leading zeros." },
+          { name: "X-Invitation-Version", in: "header", required: true,
+            schema: { type: "string", maxLength: 4096, pattern: "^iv1\\.[A-Za-z0-9_-]+$" },
+            description: "One opaque invitation version. Missing or malformed returns 400; a different version returns 412." },
+        ],
+        responses: {
+          "200": invitationResponse,
+          "400": errorResponse,
+          "401": errorResponse,
+          "403": errorResponse,
+          "404": errorResponse,
+          "412": { ...errorResponse, description: "PRECONDITION_FAILED: Invitation has changed; reload before removing a guest" },
+          "500": errorResponse,
+        },
+      },
+    },
     "/api/admin/invitations/{id}/archive": {
       post: {
         tags: ["Invitations"],
@@ -295,6 +321,7 @@ export const openApiDocument = {
         type: "object",
         required: [
           "id",
+          "version",
           "displayName",
           "maxGuests",
           "replacementsAllowed",
@@ -308,6 +335,7 @@ export const openApiDocument = {
         ],
         properties: {
           id: { type: "string" },
+          version: { type: "string", readOnly: true, description: "Opaque snapshot version. Return unchanged in X-Invitation-Version for remove; not persisted as document data." },
           displayName: { type: "string" },
           maxGuests: { type: "integer", minimum: 1 },
           replacementsAllowed: { type: "boolean" },
@@ -413,6 +441,7 @@ export const openApiDocument = {
                 type: "string",
                 enum: [
                   "VALIDATION_ERROR",
+                  "PRECONDITION_FAILED",
                   "UNAUTHORIZED",
                   "FORBIDDEN",
                   "INVITATION_NOT_FOUND",

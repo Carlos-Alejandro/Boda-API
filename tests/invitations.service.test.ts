@@ -45,6 +45,8 @@ import {
   getInvitationById,
   listInvitations,
   mapInvitationDocument,
+  removeInvitationGuest,
+  mapInvitationSnapshot,
   restoreInvitationReplacement,
   restoreArchivedInvitation,
   updateInvitation,
@@ -158,7 +160,7 @@ describe("Firestore reads", () => {
 
   it("listInvitations keeps each Firestore document id", async () => {
     firestoreMocks.listDocuments.mockResolvedValue({
-      docs: [{ id: "KM8P2XQ7", data: () => validDocument() }],
+      docs: [{ id: "KM8P2XQ7", ref: { path: "invitations/KM8P2XQ7" }, updateTime: new Timestamp(100, 123456000), data: () => validDocument() }],
     });
 
     await expect(listInvitations()).resolves.toEqual([
@@ -174,6 +176,8 @@ describe("Firestore reads", () => {
   ) {
     return {
       id,
+      ref: { path: `invitations/${id}` },
+      updateTime: new Timestamp(100, 123456000),
       data: () => ({
         ...validDocument(),
         displayName,
@@ -268,7 +272,7 @@ describe("Firestore reads", () => {
     firestoreMocks.listDocuments.mockResolvedValue({
       docs: [
         listDocument("MATCH", "Julia", "confirmed", false),
-        { id: "INVALID", data: () => ({ ...validDocument(), maxGuests: 0 }) },
+        { id: "INVALID", ref: { path: "invitations/INVALID" }, updateTime: new Timestamp(100, 123456000), data: () => ({ ...validDocument(), maxGuests: 0 }) },
       ],
     });
 
@@ -311,8 +315,7 @@ describe("createInvitation", () => {
       .mockResolvedValueOnce({ exists: false })
       .mockResolvedValueOnce({
         exists: true,
-        id: "AB2CD3EF",
-        data: () => ({
+        id: "AB2CD3EF", ref: { path: "invitations/AB2CD3EF" }, updateTime: new Timestamp(100, 123456000), data: () => ({
           ...validDocument(),
           displayName: "Familia Pérez",
           rsvpStatus: "pending",
@@ -347,8 +350,7 @@ describe("createInvitation", () => {
       .mockResolvedValueOnce({ exists: false })
       .mockResolvedValueOnce({
         exists: true,
-        id: "AB2CD3EF",
-        data: () => ({ ...validDocument(), rsvpStatus: "pending" }),
+        id: "AB2CD3EF", ref: { path: "invitations/AB2CD3EF" }, updateTime: new Timestamp(100, 123456000), data: () => ({ ...validDocument(), rsvpStatus: "pending" }),
       });
 
     await createInvitation(input);
@@ -387,8 +389,7 @@ describe("updateInvitation", () => {
       .mockResolvedValueOnce({ exists: true })
       .mockResolvedValueOnce({
         exists: true,
-        id: "KM8P2XQ7",
-        data: () => ({ ...validDocument(), ...overrides }),
+        id: "KM8P2XQ7", ref: { path: "invitations/KM8P2XQ7" }, updateTime: new Timestamp(100, 123456000), data: () => ({ ...validDocument(), ...overrides }),
       });
   }
 
@@ -485,8 +486,7 @@ describe("changeCapacity", () => {
   function snapshot(guests: Array<Record<string, unknown>>, overrides = {}) {
     return {
       exists: true,
-      id: "KM8P2XQ7",
-      data: () => ({
+      id: "KM8P2XQ7", ref: { path: "invitations/KM8P2XQ7" }, updateTime: new Timestamp(100, 123456000), data: () => ({
         ...validDocument(),
         maxGuests: guests.length,
         guests,
@@ -659,8 +659,7 @@ describe("restoreInvitationReplacement", () => {
   ) {
     return {
       exists: true,
-      id: "KM8P2XQ7",
-      data: () => ({
+      id: "KM8P2XQ7", ref: { path: "invitations/KM8P2XQ7" }, updateTime: new Timestamp(100, 123456000), data: () => ({
         ...validDocument(),
         maxGuests: guests.length,
         guests,
@@ -774,8 +773,7 @@ describe("archive and restore", () => {
   ) {
     return {
       exists: true,
-      id: "KM8P2XQ7",
-      data: () => ({
+      id: "KM8P2XQ7", ref: { path: "invitations/KM8P2XQ7" }, updateTime: new Timestamp(100, 123456000), data: () => ({
         ...validDocument(),
         ...(isArchived === undefined ? {} : { isArchived }),
         ...(archivedAt === undefined ? {} : { archivedAt }),
@@ -856,5 +854,145 @@ describe("archive and restore", () => {
     firestoreMocks.transactionGet.mockResolvedValueOnce({ exists: false });
     await expect(operation("missing")).resolves.toBeNull();
     expect(firestoreMocks.transactionUpdate).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("removeInvitationGuest transaction", () => {
+  const time = new Timestamp(100, 123456000);
+  const snapshot = (data = validDocument(), updateTime = time, id = "KM8P2XQ7") => ({
+    exists: true, id, ref: { path: "invitations/" + id }, updateTime, data: () => data,
+  });
+  const version = (snap = snapshot()) => mapInvitationSnapshot(snap as never).version;
+  beforeEach(() => {
+    vi.resetAllMocks();
+    firestoreMocks.document.mockReturnValue({ get: firestoreMocks.getDocument });
+    firestoreMocks.runTransaction.mockImplementation(async callback => callback({ get: firestoreMocks.transactionGet, update: firestoreMocks.transactionUpdate }));
+    firestoreMocks.transactionGet.mockResolvedValue(snapshot());
+    firestoreMocks.getDocument.mockResolvedValue(snapshot({ ...validDocument(), maxGuests: 1, guests: validDocument().guests.slice(0, 1) }, new Timestamp(101, 0)));
+  });
+  it("preserves raw guest fields and archived state, writes only three fields, returns reread version", async () => {
+    const remaining = { ...validDocument().guests[0], historical: { nested: [1, 2] }, originalName: "Legacy" };
+    const data = { ...validDocument(), isArchived: true, archivedAt: time, guests: [remaining, validDocument().guests[1]] };
+    firestoreMocks.transactionGet.mockResolvedValue(snapshot(data));
+    const finalSnapshot = snapshot({ ...data, maxGuests: 1, guests: [remaining] }, new Timestamp(102, 0));
+    firestoreMocks.getDocument.mockResolvedValue(finalSnapshot);
+    const result = await removeInvitationGuest("KM8P2XQ7", 1, version());
+    const write = firestoreMocks.transactionUpdate.mock.calls[0][1];
+    expect(write).toEqual({ guests: [remaining], maxGuests: 1, updatedAt: FieldValue.serverTimestamp() });
+    expect(write.guests[0]).toBe(remaining);
+    expect(write).not.toHaveProperty("version");
+    expect(result).toMatchObject({ isArchived: true, rsvpStatus: "confirmed", replacementsAllowed: true, version: version(finalSnapshot) });
+    expect(result?.version).not.toBe(version());
+  });
+  it("returns null for missing invitation", async () => {
+    firestoreMocks.transactionGet.mockResolvedValue({ exists: false });
+    expect(await removeInvitationGuest("missing", 0, version())).toBeNull();
+    expect(firestoreMocks.transactionUpdate).not.toHaveBeenCalled();
+  });
+  it.each([
+    ["invalid document", { ...validDocument(), maxGuests: 3 }, 0, /guests length/],
+    ["out of range", validDocument(), 2, /out of range/],
+    ["replacement", { ...validDocument(), guests: [{ name: "Other", shortName: "Other", type: "replacement", attending: true, originalName: "Original" }, validDocument().guests[1]] }, 0, /Replacement guests cannot be removed/],
+    ["last guest", { ...validDocument(), maxGuests: 1, guests: validDocument().guests.slice(0, 1) }, 0, /positive integer/],
+  ])("rejects %s without writing", async (_name, data, index, message) => {
+    firestoreMocks.transactionGet.mockResolvedValue(snapshot(data as ReturnType<typeof validDocument>));
+    await expect(removeInvitationGuest("KM8P2XQ7", index as number, version())).rejects.toThrow(message as RegExp);
+    expect(firestoreMocks.transactionUpdate).not.toHaveBeenCalled();
+    expect(firestoreMocks.getDocument).not.toHaveBeenCalled();
+  });
+  it.each(["old", "other invitation"])("rejects %s version before interpreting displaced index", async reason => {
+    const expected = reason === "old" ? version(snapshot(validDocument(), new Timestamp(99, 0))) : version(snapshot(validDocument(), time, "OTHER"));
+    await expect(removeInvitationGuest("KM8P2XQ7", 999, expected)).rejects.toMatchObject({ statusCode: 412, code: "PRECONDITION_FAILED" });
+    expect(firestoreMocks.transactionUpdate).not.toHaveBeenCalled();
+  });
+  it("rechecks the original version on transaction retry and does not commit a shifted deletion", async () => {
+    let committed = false;
+    const update = vi.fn();
+    firestoreMocks.runTransaction.mockImplementation(async callback => {
+      await callback({ get: async () => snapshot(), update }); // first attempt aborted by contention
+      update.mockClear();
+      const latest = { ...validDocument(), maxGuests: 1, guests: validDocument().guests.slice(1) };
+      await callback({ get: async () => snapshot(latest, new Timestamp(101, 0)), update });
+      committed = true;
+    });
+    await expect(removeInvitationGuest("KM8P2XQ7", 0, version())).rejects.toMatchObject({ statusCode: 412 });
+    expect(update).not.toHaveBeenCalled();
+    expect(committed).toBe(false);
+    expect(firestoreMocks.getDocument).not.toHaveBeenCalled();
+  });
+  it("propagates commit failure without rereading or confirming changes", async () => {
+    firestoreMocks.runTransaction.mockImplementation(async callback => {
+      await callback({ get: async () => snapshot(), update: vi.fn() });
+      throw new Error("commit failed");
+    });
+    await expect(removeInvitationGuest("KM8P2XQ7", 0, version())).rejects.toThrow("commit failed");
+    expect(firestoreMocks.getDocument).not.toHaveBeenCalled();
+  });
+  it("does not retry a committed removal when rereading fails", async () => {
+    firestoreMocks.getDocument.mockRejectedValue(new Error("read failed"));
+    await expect(removeInvitationGuest("KM8P2XQ7", 0, version())).rejects.toThrow("read failed");
+    expect(firestoreMocks.runTransaction).toHaveBeenCalledOnce();
+    expect(firestoreMocks.transactionUpdate).toHaveBeenCalledOnce();
+  });
+  it("rejects missing updateTime rather than using updatedAt", async () => {
+    firestoreMocks.transactionGet.mockResolvedValue({ ...snapshot(), updateTime: undefined });
+    await expect(removeInvitationGuest("KM8P2XQ7", 0, version())).rejects.toThrow(DataIntegrityError);
+    expect(firestoreMocks.transactionUpdate).not.toHaveBeenCalled();
+  });
+  it("returns versions for individual reads and each list item", async () => {
+    const first = snapshot(); const second = snapshot(validDocument(), new Timestamp(102, 0), "OTHER");
+    firestoreMocks.getDocument.mockResolvedValue(first);
+    firestoreMocks.listDocuments.mockResolvedValue({ docs: [first, second] });
+    expect((await getInvitationById(first.id))?.version).toBe(version(first));
+    expect((await listInvitations()).map(item => item.version)).toEqual([version(first), version(second)]);
+  });
+  it.each([
+    ["capacity", () => changeCapacity("KM8P2XQ7", 2)],
+    ["restore active", () => restoreArchivedInvitation("KM8P2XQ7")],
+  ])("returns original snapshot version for no-op %s", async (_name, operation) => {
+    expect((await operation())?.version).toBe(version());
+    expect(firestoreMocks.transactionUpdate).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("versioned write responses", () => {
+  const stamp = new Timestamp(200, 765432000);
+  const data = validDocument();
+  const snap = (overrides = {}) => ({ exists: true, id: "KM8P2XQ7", ref: { path: "invitations/KM8P2XQ7" }, updateTime: stamp, data: () => ({ ...data, ...overrides }) });
+  beforeEach(() => {
+    vi.resetAllMocks();
+    firestoreMocks.document.mockReturnValue({ get: firestoreMocks.getDocument, create: firestoreMocks.createDocument, update: firestoreMocks.updateDocument });
+    firestoreMocks.getDocument.mockResolvedValue(snap());
+    firestoreMocks.transactionGet.mockResolvedValue(snap());
+    firestoreMocks.runTransaction.mockImplementation(async callback => callback({ get: firestoreMocks.transactionGet, update: firestoreMocks.transactionUpdate }));
+    idMocks.generateInvitationId.mockReturnValue("KM8P2XQ7");
+  });
+  it.each(["create", "update", "capacity", "replacement", "archive", "restore", "archive no-op"])("%s returns snapshot version without persisting it", async operation => {
+    let result;
+    if (operation === "create") {
+      firestoreMocks.getDocument.mockResolvedValueOnce({ exists: false });
+      result = await createInvitation({ displayName: "Family", knownGuests: [{ name: "Edgar" }], openSlots: 0, replacementsAllowed: true });
+    } else if (operation === "update") result = await updateInvitation("KM8P2XQ7", { displayName: "New" });
+    else if (operation === "capacity") result = await changeCapacity("KM8P2XQ7", 3);
+    else if (operation === "replacement") {
+      firestoreMocks.transactionGet.mockResolvedValue(snap({ guests: [{ name: "Other", shortName: "Other", type: "replacement", attending: true, originalName: "Julia" }, data.guests[1]] }));
+      result = await restoreInvitationReplacement("KM8P2XQ7", 0);
+    } else if (operation === "restore") {
+      firestoreMocks.transactionGet.mockResolvedValue(snap({ isArchived: true, archivedAt: stamp }));
+      result = await restoreArchivedInvitation("KM8P2XQ7");
+    } else {
+      if (operation === "archive no-op") firestoreMocks.transactionGet.mockResolvedValue(snap({ isArchived: true, archivedAt: stamp }));
+      result = await archiveInvitation("KM8P2XQ7");
+    }
+    expect(result?.version).toBe(mapInvitationSnapshot(snap() as never).version);
+    for (const [write] of firestoreMocks.createDocument.mock.calls) expect(write).not.toHaveProperty("version");
+    for (const [write] of firestoreMocks.updateDocument.mock.calls) expect(write).not.toHaveProperty("version");
+    for (const [, write] of firestoreMocks.transactionUpdate.mock.calls) expect(write).not.toHaveProperty("version");
+    if (operation === "archive no-op") {
+      expect(firestoreMocks.transactionUpdate).not.toHaveBeenCalled();
+      expect(firestoreMocks.getDocument).not.toHaveBeenCalled();
+    }
   });
 });

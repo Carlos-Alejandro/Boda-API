@@ -49,6 +49,7 @@ describe("OpenAPI documentation", () => {
         "/api/admin/invitations/{id}",
         "/api/admin/invitations/{id}/capacity",
         "/api/admin/invitations/{id}/guests/{guestIndex}/restore-replacement",
+        "/api/admin/invitations/{id}/guests/{guestIndex}/remove",
         "/api/admin/invitations/{id}/archive",
         "/api/admin/invitations/{id}/restore",
       ].sort(),
@@ -187,6 +188,7 @@ describe("OpenAPI documentation", () => {
     const schema = openApiDocument.components.schemas.ErrorResponse;
     expect(schema.properties.error.properties.code.enum).toEqual([
       "VALIDATION_ERROR",
+      "PRECONDITION_FAILED",
       "UNAUTHORIZED",
       "FORBIDDEN",
       "INVITATION_NOT_FOUND",
@@ -202,4 +204,15 @@ describe("OpenAPI documentation", () => {
     expect(serialized).not.toMatch(/adminFirebaseUids/i);
     expect(serialized).not.toMatch(/Bearer eyJ/i);
   });
+});
+
+
+it("documents remove and read-only version without request body", () => {
+  const operation = openApiDocument.paths["/api/admin/invitations/{id}/guests/{guestIndex}/remove"].post;
+  expect(operation.security).toEqual([{ firebaseBearer: [] }]);
+  expect(operation).not.toHaveProperty("requestBody");
+  expect(operation.parameters).toContainEqual(expect.objectContaining({ name: "X-Invitation-Version", in: "header", required: true }));
+  expect(Object.keys(operation.responses).sort()).toEqual(["200", "400", "401", "403", "404", "412", "500"]);
+  expect(openApiDocument.components.schemas.Invitation.properties.version).toMatchObject({ type: "string", readOnly: true });
+  expect(openApiDocument.components.schemas.Invitation.required).toContain("version");
 });

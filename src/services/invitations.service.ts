@@ -1,8 +1,10 @@
-import { FieldValue, Timestamp } from "firebase-admin/firestore";
+import { FieldValue, Timestamp, type DocumentSnapshot } from "firebase-admin/firestore";
 
 import { firestore } from "../config/firebaseAdmin";
 import { DomainError } from "../errors/DomainError";
 import { DataIntegrityError } from "../errors/DataIntegrityError";
+import { HttpError } from "../errors/HttpError";
+import { parseInvitationId } from "../validation/invitationId";
 import type {
   CreateInvitationInput,
   Guest,
@@ -11,13 +13,17 @@ import type {
   ListInvitationFilters,
   RsvpStatus,
   UpdateInvitationInput,
+  VersionedInvitation,
 } from "../types/invitation";
 import { generateInvitationId } from "./invitationId.service";
 import {
   changeInvitationCapacity,
   createInvitationData,
   restoreReplacement,
+  removeGuest,
 } from "./invitationModel.service";
+
+import { invitationVersion } from "./invitationVersion.service";
 
 const RSVP_STATUSES = new Set<RsvpStatus>([
   "pending",
@@ -128,12 +134,19 @@ export function mapInvitationDocument(id: string, value: unknown): Invitation {
   };
 }
 
+export function mapInvitationSnapshot(snapshot: DocumentSnapshot): VersionedInvitation {
+  return {
+    ...mapInvitationDocument(snapshot.id, snapshot.data()),
+    version: invitationVersion(snapshot.ref.path, snapshot.updateTime),
+  };
+}
+
 export async function listInvitations(
   filters: ListInvitationFilters = {},
-): Promise<Invitation[]> {
+): Promise<VersionedInvitation[]> {
   const snapshot = await firestore.collection("invitations").get();
   const invitations = snapshot.docs.map((document) =>
-    mapInvitationDocument(document.id, document.data()),
+    mapInvitationSnapshot(document),
   );
   const normalizedSearch = filters.search?.trim().toLowerCase();
 
@@ -161,15 +174,15 @@ export async function listInvitations(
   });
 }
 
-export async function getInvitationById(id: string): Promise<Invitation | null> {
+export async function getInvitationById(id: string): Promise<VersionedInvitation | null> {
   const document = await firestore.collection("invitations").doc(id).get();
   if (!document.exists) return null;
-  return mapInvitationDocument(document.id, document.data());
+  return mapInvitationSnapshot(document);
 }
 
 export async function createInvitation(
   input: CreateInvitationInput,
-): Promise<Invitation> {
+): Promise<VersionedInvitation> {
   const invitationData = createInvitationData(input);
   const collection = firestore.collection("invitations");
 
@@ -188,7 +201,7 @@ export async function createInvitation(
     if (!created.exists) {
       throw new Error("Created invitation could not be read back");
     }
-    return mapInvitationDocument(created.id, created.data());
+    return mapInvitationSnapshot(created);
   }
 
   throw new Error("Could not generate a unique invitation ID");
@@ -197,7 +210,7 @@ export async function createInvitation(
 export async function updateInvitation(
   id: string,
   input: UpdateInvitationInput,
-): Promise<Invitation | null> {
+): Promise<VersionedInvitation | null> {
   const document = firestore.collection("invitations").doc(id);
   const existing = await document.get();
   if (!existing.exists) return null;
@@ -220,22 +233,19 @@ export async function updateInvitation(
 
   const updated = await document.get();
   if (!updated.exists) throw new Error("Updated invitation could not be read back");
-  return mapInvitationDocument(updated.id, updated.data());
+  return mapInvitationSnapshot(updated);
 }
 
 export async function changeCapacity(
   id: string,
   newMaxGuests: number,
-): Promise<Invitation | null> {
+): Promise<VersionedInvitation | null> {
   const document = firestore.collection("invitations").doc(id);
   const result = await firestore.runTransaction(async (transaction) => {
     const currentSnapshot = await transaction.get(document);
     if (!currentSnapshot.exists) return null;
 
-    const current = mapInvitationDocument(
-      currentSnapshot.id,
-      currentSnapshot.data(),
-    );
+    const current = mapInvitationSnapshot(currentSnapshot);
     if (newMaxGuests === current.maxGuests) {
       return { invitation: current, changed: false } as const;
     }
@@ -254,19 +264,19 @@ export async function changeCapacity(
 
   const updated = await document.get();
   if (!updated.exists) throw new Error("Updated invitation could not be read back");
-  return mapInvitationDocument(updated.id, updated.data());
+  return mapInvitationSnapshot(updated);
 }
 
 export async function restoreInvitationReplacement(
   id: string,
   guestIndex: number,
-): Promise<Invitation | null> {
+): Promise<VersionedInvitation | null> {
   const document = firestore.collection("invitations").doc(id);
   const exists = await firestore.runTransaction(async (transaction) => {
     const snapshot = await transaction.get(document);
     if (!snapshot.exists) return false;
 
-    const current = mapInvitationDocument(snapshot.id, snapshot.data());
+    const current = mapInvitationSnapshot(snapshot);
     if (guestIndex < 0 || guestIndex >= current.guests.length) {
       throw new DomainError("guestIndex is out of range");
     }
@@ -286,19 +296,19 @@ export async function restoreInvitationReplacement(
 
   const updated = await document.get();
   if (!updated.exists) throw new Error("Updated invitation could not be read back");
-  return mapInvitationDocument(updated.id, updated.data());
+  return mapInvitationSnapshot(updated);
 }
 
 async function setInvitationArchived(
   id: string,
   isArchived: boolean,
-): Promise<Invitation | null> {
+): Promise<VersionedInvitation | null> {
   const document = firestore.collection("invitations").doc(id);
   const result = await firestore.runTransaction(async (transaction) => {
     const snapshot = await transaction.get(document);
     if (!snapshot.exists) return null;
 
-    const current = mapInvitationDocument(snapshot.id, snapshot.data());
+    const current = mapInvitationSnapshot(snapshot);
     if (current.isArchived === isArchived) {
       return { invitation: current, changed: false } as const;
     }
@@ -316,13 +326,46 @@ async function setInvitationArchived(
 
   const updated = await document.get();
   if (!updated.exists) throw new Error("Updated invitation could not be read back");
-  return mapInvitationDocument(updated.id, updated.data());
+  return mapInvitationSnapshot(updated);
 }
 
-export function archiveInvitation(id: string): Promise<Invitation | null> {
+export function archiveInvitation(id: string): Promise<VersionedInvitation | null> {
   return setInvitationArchived(id, true);
 }
 
-export function restoreArchivedInvitation(id: string): Promise<Invitation | null> {
+export function restoreArchivedInvitation(id: string): Promise<VersionedInvitation | null> {
   return setInvitationArchived(id, false);
+}
+
+export async function removeInvitationGuest(
+  id: string,
+  guestIndex: number,
+  expectedVersion: string,
+): Promise<VersionedInvitation | null> {
+  const document = firestore.collection("invitations").doc(parseInvitationId(id));
+  const exists = await firestore.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(document);
+    if (!snapshot.exists) return false;
+    const current = mapInvitationSnapshot(snapshot);
+    if (current.version !== expectedVersion) {
+      throw new HttpError(
+        412,
+        "PRECONDITION_FAILED",
+        "Invitation has changed; reload before removing a guest",
+      );
+    }
+    const changed = removeGuest(current, guestIndex);
+    // Preserve original remaining objects, including fields unknown to the mapper.
+    const originalGuests = snapshot.data()!.guests as unknown[];
+    transaction.update(document, {
+      guests: originalGuests.filter((_, index) => index !== guestIndex),
+      maxGuests: changed.maxGuests,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    return true;
+  });
+  if (!exists) return null;
+  const updated = await document.get();
+  if (!updated.exists) throw new Error("Updated invitation could not be read back");
+  return mapInvitationSnapshot(updated);
 }

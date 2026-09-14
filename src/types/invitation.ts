@@ -25,6 +25,7 @@ export interface Invitation {
 }
 
 export type InvitationData = Omit<Invitation, "id">;
+export type VersionedInvitation = Invitation & { version: string };
 
 export interface ListInvitationFilters {
   search?: string;

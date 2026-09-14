@@ -151,3 +151,30 @@ export function restoreReplacement(guest: Guest): Guest {
     attending: null,
   };
 }
+
+export function removeGuest(invitation: Invitation, guestIndex: number): Invitation {
+  assertInvitationInvariant(invitation);
+  assertValidCapacity(invitation.maxGuests);
+  if (!Number.isSafeInteger(guestIndex) || guestIndex < 0) {
+    throw new DomainError("guestIndex must be a non-negative integer");
+  }
+  if (guestIndex >= invitation.guests.length) {
+    throw new DomainError("guestIndex is out of range");
+  }
+  const guest = invitation.guests[guestIndex];
+  if (guest.type === "replacement") {
+    throw new DomainError("Replacement guests cannot be removed");
+  }
+  if (guest.type !== "known" && guest.type !== "open") {
+    throw new DomainError("Guest type cannot be removed");
+  }
+  const maxGuests = invitation.maxGuests - 1;
+  assertValidCapacity(maxGuests);
+  const result = {
+    ...invitation,
+    maxGuests,
+    guests: invitation.guests.filter((_, index) => index !== guestIndex),
+  };
+  assertInvitationInvariant(result);
+  return result;
+}

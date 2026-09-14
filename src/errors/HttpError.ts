@@ -1,4 +1,8 @@
 const PUBLIC_HTTP_ERRORS = {
+  PRECONDITION_FAILED: {
+    statusCode: 412,
+    message: "Invitation has changed; reload before removing a guest",
+  },
   FORBIDDEN: {
     statusCode: 403,
     message: "Forbidden",
