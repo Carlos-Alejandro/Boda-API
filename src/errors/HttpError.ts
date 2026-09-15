@@ -1,18 +1,18 @@
 const RESTORE_PRECONDITION_MESSAGE =
-  "Invitation has changed; reload before restoring a replacement";
+  "La invitación cambió. Recarga los datos antes de restaurar al invitado original.";
 
 const PUBLIC_HTTP_ERRORS = {
   PRECONDITION_FAILED: {
     statusCode: 412,
-    message: "Invitation has changed; reload before removing a guest",
+    message: "La invitación cambió. Recarga los datos antes de eliminar un invitado.",
   },
   FORBIDDEN: {
     statusCode: 403,
-    message: "Forbidden",
+    message: "Acceso denegado",
   },
   INVITATION_NOT_FOUND: {
     statusCode: 404,
-    message: "Invitation not found",
+    message: "Invitación no encontrada",
   },
 } as const;
 

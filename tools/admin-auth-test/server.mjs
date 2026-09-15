@@ -15,7 +15,7 @@ const server = createServer((request, response) => {
 
   if (!file) {
     response.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
-    response.end("Not found");
+    response.end("No encontrado");
     return;
   }
 

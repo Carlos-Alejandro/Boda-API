@@ -32,7 +32,7 @@ describe("authenticateAdmin", () => {
     await authenticateAdmin(requestMock(), response, vi.fn());
     expect(response.status).toHaveBeenCalledWith(401);
     expect(response.json).toHaveBeenCalledWith({
-      error: { code: "UNAUTHORIZED", message: "Authentication required" },
+      error: { code: "UNAUTHORIZED", message: "Se requiere autenticación" },
     });
     expect(authMocks.verifyIdToken).not.toHaveBeenCalled();
   });
@@ -49,7 +49,7 @@ describe("authenticateAdmin", () => {
     );
     expect(response.status).toHaveBeenCalledWith(401);
     expect(response.json).toHaveBeenCalledWith({
-      error: { code: "UNAUTHORIZED", message: "Invalid authentication token" },
+      error: { code: "UNAUTHORIZED", message: "Token de autenticación inválido" },
     });
   });
 
@@ -63,7 +63,7 @@ describe("authenticateAdmin", () => {
     );
     expect(response.status).toHaveBeenCalledWith(403);
     expect(response.json).toHaveBeenCalledWith({
-      error: { code: "FORBIDDEN", message: "Forbidden" },
+      error: { code: "FORBIDDEN", message: "Acceso denegado" },
     });
   });
 

@@ -31,7 +31,7 @@ function toHttpInvitation(invitation: VersionedInvitation) {
 }
 
 function invitationNotFound(): never {
-  throw new HttpError(404, "INVITATION_NOT_FOUND", "Invitation not found");
+  throw new HttpError(404, "INVITATION_NOT_FOUND", "Invitación no encontrada");
 }
 
 export async function listInvitationsController(

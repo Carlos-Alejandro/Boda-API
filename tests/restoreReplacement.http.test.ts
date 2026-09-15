@@ -53,9 +53,9 @@ describe("restore-replacement HTTP", () => {
     expect(mocks.restoreInvitationReplacement).not.toHaveBeenCalled();
   });
   it.each([
-    [{ Authorization: "Bearer valid" }, "X-Invitation-Version header is required"],
-    [{ Authorization: "Bearer valid", "X-Invitation-Version": "invalid" }, "X-Invitation-Version header is invalid"],
-    [{ Authorization: "Bearer valid", "If-Match": version }, "X-Invitation-Version header is required"],
+    [{ Authorization: "Bearer valid" }, "Se requiere el encabezado X-Invitation-Version"],
+    [{ Authorization: "Bearer valid", "X-Invitation-Version": "invalid" }, "El encabezado X-Invitation-Version es inválido"],
+    [{ Authorization: "Bearer valid", "If-Match": version }, "Se requiere el encabezado X-Invitation-Version"],
   ])("validates headers %j", async (headers, message) => {
     const response = await restore(headers);
     expect(response.status).toBe(400);
@@ -70,7 +70,7 @@ describe("restore-replacement HTTP", () => {
       req.on("error", reject); req.end();
     });
     expect(response.status).toBe(400);
-    expect(JSON.parse(response.body).error.message).toBe("X-Invitation-Version header is invalid");
+    expect(JSON.parse(response.body).error.message).toBe("El encabezado X-Invitation-Version es inválido");
   });
   it.each(["-1", "1.5", "+1", "%201", "abc", "01", "9007199254740992"])("rejects index %s", async index => {
     const response = await restore(undefined, basePath + "/legacy-id/guests/" + index + "/restore-replacement");
@@ -86,13 +86,13 @@ describe("restore-replacement HTTP", () => {
     expect(mocks.restoreInvitationReplacement).toHaveBeenCalledWith("legacy-id", 0, version);
   });
   it("returns exact 412", async () => {
-    const message = "Invitation has changed; reload before restoring a replacement";
+    const message = "La invitación cambió. Recarga los datos antes de restaurar al invitado original.";
     mocks.restoreInvitationReplacement.mockRejectedValue(new HttpError(412, "PRECONDITION_FAILED", message));
     const response = await restore();
     expect(response.status).toBe(412);
     expect(await response.json()).toEqual({ error: { code: "PRECONDITION_FAILED", message } });
   });
-  it.each(["Only a replacement guest can be restored", "guestIndex is out of range"])("preserves 400: %s", async message => {
+  it.each(["Solo se puede restaurar al invitado original de un invitado de reemplazo", "guestIndex está fuera de rango"])("preserves 400: %s", async message => {
     mocks.restoreInvitationReplacement.mockRejectedValue(new DomainError(message));
     const response = await restore();
     expect(response.status).toBe(400);
@@ -108,7 +108,7 @@ describe("restore-replacement HTTP", () => {
     mocks.restoreInvitationReplacement.mockRejectedValue(new Error("private details"));
     const response = await restore();
     expect(response.status).toBe(500);
-    expect(await response.json()).toEqual({ error: { code: "INTERNAL_ERROR", message: "Internal server error" } });
+    expect(await response.json()).toEqual({ error: { code: "INTERNAL_ERROR", message: "Error interno del servidor" } });
   });
   it("allows version header in authorized preflight without opening origins", async () => {
     const headers = { Origin: "https://admin.example.com", "Access-Control-Request-Method": "POST", "Access-Control-Request-Headers": "authorization,x-invitation-version" };

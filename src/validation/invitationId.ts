@@ -7,7 +7,7 @@ export function parseInvitationId(value: unknown): string {
     Buffer.byteLength(value, "utf8") > 1500 ||
     Buffer.from(value, "utf8").toString("utf8") !== value
   ) {
-    throw new DomainError("Invalid invitation ID");
+    throw new DomainError("ID de invitación inválido");
   }
   return value;
 }

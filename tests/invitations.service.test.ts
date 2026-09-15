@@ -676,7 +676,7 @@ describe("restoreInvitationReplacement", () => {
     firestoreMocks.transactionGet.mockResolvedValueOnce(current);
     await expect(restoreInvitationReplacement("KM8P2XQ7", 1, version)).rejects.toMatchObject({
       statusCode: 412, code: "PRECONDITION_FAILED",
-      message: "Invitation has changed; reload before restoring a replacement",
+      message: "La invitación cambió. Recarga los datos antes de restaurar al invitado original.",
     });
     expect(firestoreMocks.transactionGet).toHaveBeenCalledWith(firestoreMocks.document.mock.results[0].value);
     expect(firestoreMocks.getDocument).not.toHaveBeenCalled();
@@ -762,7 +762,7 @@ describe("restoreInvitationReplacement", () => {
   it("rejects an out-of-range guestIndex without writing", async () => {
     firestoreMocks.transactionGet.mockResolvedValueOnce(snapshot([knownGuest]));
     await expect(restoreInvitationReplacement("KM8P2XQ7", 1, version)).rejects.toThrow(
-      /out of range/,
+      /fuera de rango/,
     );
     expect(firestoreMocks.transactionUpdate).not.toHaveBeenCalled();
   });
@@ -770,7 +770,7 @@ describe("restoreInvitationReplacement", () => {
   it("rejects a non-replacement guest without writing", async () => {
     firestoreMocks.transactionGet.mockResolvedValueOnce(snapshot([knownGuest]));
     await expect(restoreInvitationReplacement("KM8P2XQ7", 0, version)).rejects.toThrow(
-      /Only a replacement/,
+      /Solo se puede restaurar al invitado original/,
     );
     expect(firestoreMocks.transactionUpdate).not.toHaveBeenCalled();
   });
@@ -928,9 +928,9 @@ describe("removeInvitationGuest transaction", () => {
   });
   it.each([
     ["invalid document", { ...validDocument(), maxGuests: 3 }, 0, /guests length/],
-    ["out of range", validDocument(), 2, /out of range/],
-    ["replacement", { ...validDocument(), guests: [{ name: "Other", shortName: "Other", type: "replacement", attending: true, originalName: "Original" }, validDocument().guests[1]] }, 0, /Replacement guests cannot be removed/],
-    ["last guest", { ...validDocument(), maxGuests: 1, guests: validDocument().guests.slice(0, 1) }, 0, /positive integer/],
+    ["out of range", validDocument(), 2, /fuera de rango/],
+    ["replacement", { ...validDocument(), guests: [{ name: "Other", shortName: "Other", type: "replacement", attending: true, originalName: "Original" }, validDocument().guests[1]] }, 0, /No se pueden eliminar invitados de reemplazo/],
+    ["last guest", { ...validDocument(), maxGuests: 1, guests: validDocument().guests.slice(0, 1) }, 0, /entero mayor que cero/],
   ])("rejects %s without writing", async (_name, data, index, message) => {
     firestoreMocks.transactionGet.mockResolvedValue(snapshot(data as ReturnType<typeof validDocument>));
     await expect(removeInvitationGuest("KM8P2XQ7", index as number, version())).rejects.toThrow(message as RegExp);

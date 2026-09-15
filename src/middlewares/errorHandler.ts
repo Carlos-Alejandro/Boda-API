@@ -5,7 +5,7 @@ import { HttpError, resolvePublicHttpError } from "../errors/HttpError";
 import { sendError } from "../http/errorResponse";
 
 export const routeNotFound: RequestHandler = (_request, response) => {
-  sendError(response, 404, "NOT_FOUND", "Route not found");
+  sendError(response, 404, "NOT_FOUND", "Ruta no encontrada");
 };
 
 export const errorHandler: ErrorRequestHandler = (
@@ -22,7 +22,7 @@ export const errorHandler: ErrorRequestHandler = (
     "type" in error &&
     error.type === "entity.parse.failed"
   ) {
-    sendError(response, 400, "VALIDATION_ERROR", "Invalid JSON body");
+    sendError(response, 400, "VALIDATION_ERROR", "El cuerpo de la solicitud no es un JSON válido");
     return;
   }
 
@@ -37,7 +37,7 @@ export const errorHandler: ErrorRequestHandler = (
       );
       return;
     }
-    sendError(response, 500, "INTERNAL_ERROR", "Internal server error");
+    sendError(response, 500, "INTERNAL_ERROR", "Error interno del servidor");
     return;
   }
 
@@ -46,5 +46,5 @@ export const errorHandler: ErrorRequestHandler = (
     return;
   }
 
-  sendError(response, 500, "INTERNAL_ERROR", "Internal server error");
+  sendError(response, 500, "INTERNAL_ERROR", "Error interno del servidor");
 };

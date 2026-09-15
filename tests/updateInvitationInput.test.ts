@@ -36,14 +36,14 @@ describe("parseUpdateInvitationInput", () => {
   );
 
   it("rejects an empty body", () => {
-    expect(() => parseUpdateInvitationInput({})).toThrow(/At least one field/);
+    expect(() => parseUpdateInvitationInput({})).toThrow(/Se requiere al menos un campo/);
   });
 
   it.each(["id", "maxGuests", "guests", "rsvpStatus", "message", "updatedAt", "isArchived", "archivedAt"])(
     "rejects forbidden field %s",
     (field) => {
       expect(() => parseUpdateInvitationInput({ [field]: "forced" })).toThrow(
-        /Unexpected field/,
+        /Campo no permitido/,
       );
     },
   );

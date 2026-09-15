@@ -56,7 +56,7 @@ describe("parseListInvitationsQuery", () => {
 
   it("rejects unknown query parameters", () => {
     expect(() => parseListInvitationsQuery({ sort: "displayName" })).toThrow(
-      /Unexpected query parameter/,
+      /Parámetro de consulta no permitido/,
     );
   });
 });

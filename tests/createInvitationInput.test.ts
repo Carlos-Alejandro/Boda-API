@@ -32,7 +32,7 @@ describe("parseCreateInvitationInput", () => {
     "rejects backend-controlled field %s",
     (field) => {
       expect(() => parseCreateInvitationInput({ ...validBody, [field]: "forced" })).toThrow(
-        /Unexpected field/,
+        /Campo no permitido/,
       );
     },
   );

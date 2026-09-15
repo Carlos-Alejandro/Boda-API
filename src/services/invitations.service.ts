@@ -282,11 +282,11 @@ export async function restoreInvitationReplacement(
       throw new HttpError(
         412,
         "PRECONDITION_FAILED",
-        "Invitation has changed; reload before restoring a replacement",
+        "La invitación cambió. Recarga los datos antes de restaurar al invitado original.",
       );
     }
     if (guestIndex < 0 || guestIndex >= current.guests.length) {
-      throw new DomainError("guestIndex is out of range");
+      throw new DomainError("guestIndex está fuera de rango");
     }
 
     const guests = current.guests.map((guest, index) =>
@@ -359,7 +359,7 @@ export async function removeInvitationGuest(
       throw new HttpError(
         412,
         "PRECONDITION_FAILED",
-        "Invitation has changed; reload before removing a guest",
+        "La invitación cambió. Recarga los datos antes de eliminar un invitado.",
       );
     }
     const changed = removeGuest(current, guestIndex);

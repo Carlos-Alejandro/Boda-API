@@ -13,7 +13,7 @@ export async function authenticateAdmin(
   const match = authorization?.match(/^Bearer\s+(\S+)$/i);
 
   if (!match) {
-    sendError(response, 401, "UNAUTHORIZED", "Authentication required");
+    sendError(response, 401, "UNAUTHORIZED", "Se requiere autenticación");
     return;
   }
 
@@ -21,7 +21,7 @@ export async function authenticateAdmin(
     const decodedToken = await auth.verifyIdToken(match[1]);
 
     if (!env.adminFirebaseUids.includes(decodedToken.uid)) {
-      sendError(response, 403, "FORBIDDEN", "Forbidden");
+      sendError(response, 403, "FORBIDDEN", "Acceso denegado");
       return;
     }
 
@@ -32,6 +32,6 @@ export async function authenticateAdmin(
 
     next();
   } catch {
-    sendError(response, 401, "UNAUTHORIZED", "Invalid authentication token");
+    sendError(response, 401, "UNAUTHORIZED", "Token de autenticación inválido");
   }
 }

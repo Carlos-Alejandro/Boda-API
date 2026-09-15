@@ -67,7 +67,7 @@ describe("invitations controllers", () => {
 
     expect(response.status).toHaveBeenCalledWith(404);
     expect(response.json).toHaveBeenCalledWith({
-      error: { code: "INVITATION_NOT_FOUND", message: "Invitation not found" },
+      error: { code: "INVITATION_NOT_FOUND", message: "Invitación no encontrada" },
     });
   });
 

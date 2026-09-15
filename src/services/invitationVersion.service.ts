@@ -20,7 +20,7 @@ export function invitationVersion(
 
 export function parseInvitationVersion(value: unknown): string {
   if (value === undefined) {
-    throw new DomainError("X-Invitation-Version header is required");
+    throw new DomainError("Se requiere el encabezado X-Invitation-Version");
   }
   try {
     if (
@@ -43,6 +43,6 @@ export function parseInvitationVersion(value: unknown): string {
     if (invitationVersion(path, timestamp) !== value) throw new Error();
     return value;
   } catch {
-    throw new DomainError("X-Invitation-Version header is invalid");
+    throw new DomainError("El encabezado X-Invitation-Version es inválido");
   }
 }

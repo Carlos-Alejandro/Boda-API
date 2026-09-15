@@ -24,26 +24,26 @@ function isValidIsoDate(value: string): boolean {
 }
 
 export function parseUpdateInvitationInput(body: unknown): UpdateInvitationInput {
-  if (!isObject(body)) throw new DomainError("Request body must be an object");
+  if (!isObject(body)) throw new DomainError("El cuerpo de la solicitud debe ser un objeto");
 
   const fields = Object.keys(body);
-  if (fields.length === 0) throw new DomainError("At least one field is required");
+  if (fields.length === 0) throw new DomainError("Se requiere al menos un campo");
 
   const extraField = fields.find((field) => !ALLOWED_FIELDS.has(field));
-  if (extraField) throw new DomainError(`Unexpected field: ${extraField}`);
+  if (extraField) throw new DomainError(`Campo no permitido: ${extraField}`);
 
   const input: UpdateInvitationInput = {};
 
   if (Object.hasOwn(body, "displayName")) {
     if (typeof body.displayName !== "string" || !body.displayName.trim()) {
-      throw new DomainError("displayName must be a non-empty string");
+      throw new DomainError("displayName debe ser un texto no vacío");
     }
     input.displayName = body.displayName.trim();
   }
 
   if (Object.hasOwn(body, "replacementsAllowed")) {
     if (typeof body.replacementsAllowed !== "boolean") {
-      throw new DomainError("replacementsAllowed must be a boolean");
+      throw new DomainError("replacementsAllowed debe ser un valor booleano");
     }
     input.replacementsAllowed = body.replacementsAllowed;
   }
@@ -56,11 +56,11 @@ export function parseUpdateInvitationInput(body: unknown): UpdateInvitationInput
         typeof body.editOverrideUntil !== "string" ||
         !isValidIsoDate(body.editOverrideUntil)
       ) {
-        throw new DomainError("editOverrideUntil must be a valid ISO date or null");
+        throw new DomainError("editOverrideUntil debe ser una fecha ISO válida o null");
       }
       const date = new Date(body.editOverrideUntil);
       if (Number.isNaN(date.getTime())) {
-        throw new DomainError("editOverrideUntil must be a valid ISO date or null");
+        throw new DomainError("editOverrideUntil debe ser una fecha ISO válida o null");
       }
       input.editOverrideUntil = date;
     }

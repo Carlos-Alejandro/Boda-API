@@ -7,12 +7,12 @@ export function parseGuestIndex(value: unknown): number {
     typeof value !== "string" ||
     !NON_NEGATIVE_INTEGER_PATTERN.test(value)
   ) {
-    throw new DomainError("guestIndex must be a non-negative integer");
+    throw new DomainError("guestIndex debe ser un número entero mayor o igual a cero");
   }
 
   const guestIndex = Number(value);
   if (!Number.isSafeInteger(guestIndex)) {
-    throw new DomainError("guestIndex must be a non-negative integer");
+    throw new DomainError("guestIndex debe ser un número entero mayor o igual a cero");
   }
   return guestIndex;
 }

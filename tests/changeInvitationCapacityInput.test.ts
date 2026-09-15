@@ -21,7 +21,7 @@ describe("parseChangeInvitationCapacityInput", () => {
     "rejects extra fields in %o",
     (body) => {
       expect(() => parseChangeInvitationCapacityInput(body)).toThrow(
-        /only maxGuests/,
+        /únicamente maxGuests/,
       );
     },
   );

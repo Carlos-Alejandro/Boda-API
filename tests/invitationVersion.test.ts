@@ -18,7 +18,7 @@ describe("invitation version", () => {
     expect(JSON.parse(Buffer.from(token.slice(4), "base64url").toString())).toEqual([path, "100", "123456000"]);
   });
   it("requires updateTime", () => expect(() => invitationVersion(path, undefined)).toThrow(DataIntegrityError));
-  it("requires the header", () => expect(() => parseInvitationVersion(undefined)).toThrow("X-Invitation-Version header is required"));
+  it("requires the header", () => expect(() => parseInvitationVersion(undefined)).toThrow("Se requiere el encabezado X-Invitation-Version"));
   it.each([
     "", null, [token], token + "=", " " + token, token + "," + token, "iv2.abc", "iv1.!", "iv1." + "a".repeat(4096),
     encode({}), encode([path, "100"]), encode([path, 100, "123456000"]),
@@ -29,7 +29,7 @@ describe("invitation version", () => {
     "iv1." + Buffer.from('[ "invitations/legacy-id", "100", "123456000" ]').toString("base64url"),
     "iv1." + Buffer.from([0xff]).toString("base64url"),
   ])("rejects malformed/noncanonical token %j", value => {
-    expect(() => parseInvitationVersion(value)).toThrow("X-Invitation-Version header is invalid");
+    expect(() => parseInvitationVersion(value)).toThrow("El encabezado X-Invitation-Version es inválido");
   });
   it.each([-62135596800, 0, 253402300799])("accepts timestamp seconds boundary %s", seconds => {
     const value = invitationVersion(path, new Timestamp(seconds, 999999999));
@@ -38,7 +38,7 @@ describe("invitation version", () => {
 });
 describe("invitation ID", () => {
   it.each(["a/b", "a/b/c", "", ".", "..", "__reserved__", "a".repeat(1501), "\ud800", null])("rejects %j", id => {
-    expect(() => parseInvitationId(id)).toThrow("Invalid invitation ID");
+    expect(() => parseInvitationId(id)).toThrow("ID de invitación inválido");
   });
   it.each(["legacy-id", "a%2Fb", "Familia historica", "x".repeat(1500)])("keeps a single segment without decoding %s", id => {
     expect(parseInvitationId(id)).toBe(id);

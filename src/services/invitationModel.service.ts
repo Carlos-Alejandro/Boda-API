@@ -29,7 +29,7 @@ function createKnownGuest(name: string): Guest {
   const normalizedName = normalizeName(name);
 
   if (!normalizedName) {
-    throw new DomainError("Known guest name cannot be empty");
+    throw new DomainError("El nombre del invitado conocido no puede estar vacío");
   }
 
   return {
@@ -42,13 +42,13 @@ function createKnownGuest(name: string): Guest {
 
 function assertValidCapacity(capacity: number): void {
   if (!Number.isInteger(capacity) || capacity < 1) {
-    throw new DomainError("Invitation capacity must be a positive integer");
+    throw new DomainError("La capacidad de la invitación debe ser un número entero mayor que cero");
   }
 }
 
 function assertInvitationInvariant(invitation: Invitation): void {
   if (invitation.guests.length !== invitation.maxGuests) {
-    throw new DomainError("Invitation guests must match its capacity");
+    throw new DomainError("La cantidad de invitados debe coincidir con la capacidad de la invitación");
   }
 }
 
@@ -58,11 +58,11 @@ export function createInvitationData(
   const displayName = input.displayName.trim();
 
   if (!displayName) {
-    throw new DomainError("Invitation display name cannot be empty");
+    throw new DomainError("El nombre para mostrar de la invitación no puede estar vacío");
   }
 
   if (!Number.isInteger(input.openSlots) || input.openSlots < 0) {
-    throw new DomainError("Open slots must be a non-negative integer");
+    throw new DomainError("La cantidad de lugares disponibles debe ser un número entero mayor o igual a cero");
   }
 
   const knownGuests = input.knownGuests.map(({ name }) =>
@@ -72,7 +72,7 @@ export function createInvitationData(
   const guests = [...knownGuests, ...openGuests];
 
   if (guests.length === 0) {
-    throw new DomainError("Invitation must have at least one guest slot");
+    throw new DomainError("La invitación debe tener al menos un lugar para un invitado");
   }
 
   return {
@@ -124,7 +124,7 @@ export function changeInvitationCapacity(
     .slice(-slotsToRemove);
 
   if (removableIndexes.length < slotsToRemove) {
-    throw new DomainError("Invitation capacity cannot be reduced safely");
+    throw new DomainError("No se puede reducir la capacidad de la invitación de forma segura");
   }
 
   const indexesToRemove = new Set(removableIndexes);
@@ -135,13 +135,13 @@ export function changeInvitationCapacity(
 
 export function restoreReplacement(guest: Guest): Guest {
   if (guest.type !== "replacement") {
-    throw new DomainError("Only a replacement guest can be restored");
+    throw new DomainError("Solo se puede restaurar al invitado original de un invitado de reemplazo");
   }
 
   const originalName = normalizeName(guest.originalName ?? "");
 
   if (!originalName) {
-    throw new DomainError("Replacement guest must have a valid original name");
+    throw new DomainError("El invitado de reemplazo debe tener un nombre original válido");
   }
 
   return {
@@ -156,17 +156,17 @@ export function removeGuest(invitation: Invitation, guestIndex: number): Invitat
   assertInvitationInvariant(invitation);
   assertValidCapacity(invitation.maxGuests);
   if (!Number.isSafeInteger(guestIndex) || guestIndex < 0) {
-    throw new DomainError("guestIndex must be a non-negative integer");
+    throw new DomainError("guestIndex debe ser un número entero mayor o igual a cero");
   }
   if (guestIndex >= invitation.guests.length) {
-    throw new DomainError("guestIndex is out of range");
+    throw new DomainError("guestIndex está fuera de rango");
   }
   const guest = invitation.guests[guestIndex];
   if (guest.type === "replacement") {
-    throw new DomainError("Replacement guests cannot be removed");
+    throw new DomainError("No se pueden eliminar invitados de reemplazo");
   }
   if (guest.type !== "known" && guest.type !== "open") {
-    throw new DomainError("Guest type cannot be removed");
+    throw new DomainError("No se pueden eliminar invitados de este tipo");
   }
   const maxGuests = invitation.maxGuests - 1;
   assertValidCapacity(maxGuests);

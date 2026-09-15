@@ -43,21 +43,21 @@ describe("HTTP error middleware", () => {
     );
     expect(response.status).toHaveBeenCalledWith(400);
     expect(response.json).toHaveBeenCalledWith({
-      error: { code: "VALIDATION_ERROR", message: "Invalid JSON body" },
+      error: { code: "VALIDATION_ERROR", message: "El cuerpo de la solicitud no es un JSON válido" },
     });
   });
 
   it("maps known HTTP errors without changing their status", () => {
     const response = responseMock();
     errorHandler(
-      new HttpError(404, "INVITATION_NOT_FOUND", "Invitation not found"),
+      new HttpError(404, "INVITATION_NOT_FOUND", "Invitación no encontrada"),
       {} as Request,
       response,
       vi.fn() as NextFunction,
     );
     expect(response.status).toHaveBeenCalledWith(404);
     expect(response.json).toHaveBeenCalledWith({
-      error: { code: "INVITATION_NOT_FOUND", message: "Invitation not found" },
+      error: { code: "INVITATION_NOT_FOUND", message: "Invitación no encontrada" },
     });
   });
 
@@ -65,7 +65,7 @@ describe("HTTP error middleware", () => {
     const error = new HttpError(
       404,
       "INVITATION_NOT_FOUND",
-      "Invitation not found",
+      "Invitación no encontrada",
     );
     expect(Object.isFrozen(error)).toBe(true);
 
@@ -83,14 +83,14 @@ describe("HTTP error middleware", () => {
 
     expect(error.statusCode).toBe(404);
     expect(error.code).toBe("INVITATION_NOT_FOUND");
-    expect(error.message).toBe("Invitation not found");
+    expect(error.message).toBe("Invitación no encontrada");
   });
 
   it("does not reflect attempted HttpError manipulation", () => {
     const error = new HttpError(
       404,
       "INVITATION_NOT_FOUND",
-      "Invitation not found",
+      "Invitación no encontrada",
     );
     try {
       (error as unknown as { message: string }).message =
@@ -108,7 +108,7 @@ describe("HTTP error middleware", () => {
     );
     expect(response.status).toHaveBeenCalledWith(404);
     expect(response.json).toHaveBeenCalledWith({
-      error: { code: "INVITATION_NOT_FOUND", message: "Invitation not found" },
+      error: { code: "INVITATION_NOT_FOUND", message: "Invitación no encontrada" },
     });
     expect(JSON.stringify((response.json as ReturnType<typeof vi.fn>).mock.calls)).not.toContain(
       "sensitive internal message",
@@ -139,19 +139,19 @@ describe("HTTP error middleware", () => {
     expect(reads).toBe(1);
     expect(response.status).toHaveBeenCalledWith(404);
     expect(response.json).toHaveBeenCalledWith({
-      error: { code: "INVITATION_NOT_FOUND", message: "Invitation not found" },
+      error: { code: "INVITATION_NOT_FOUND", message: "Invitación no encontrada" },
     });
   });
 
   it("rejects an HttpError status below 400", () => {
     expect(
-      () => new HttpError(200, "INVITATION_NOT_FOUND", "Invitation not found"),
+      () => new HttpError(200, "INVITATION_NOT_FOUND", "Invitación no encontrada"),
     ).toThrow(RangeError);
   });
 
   it("rejects an HttpError status above 599", () => {
     expect(
-      () => new HttpError(999, "INVITATION_NOT_FOUND", "Invitation not found"),
+      () => new HttpError(999, "INVITATION_NOT_FOUND", "Invitación no encontrada"),
     ).toThrow(RangeError);
   });
 
@@ -161,7 +161,7 @@ describe("HTTP error middleware", () => {
         new HttpError(
           404,
           "ARBITRARY_CODE" as "INVITATION_NOT_FOUND",
-          "Invitation not found",
+          "Invitación no encontrada",
         ),
     ).toThrow(TypeError);
   });
@@ -178,7 +178,7 @@ describe("HTTP error middleware", () => {
     );
     expect(response.status).toHaveBeenCalledWith(500);
     expect(response.json).toHaveBeenCalledWith({
-      error: { code: "INTERNAL_ERROR", message: "Internal server error" },
+      error: { code: "INTERNAL_ERROR", message: "Error interno del servidor" },
     });
     const payload = JSON.stringify(
       (response.json as ReturnType<typeof vi.fn>).mock.calls,
@@ -200,7 +200,7 @@ describe("HTTP error middleware", () => {
     );
     expect(response.status).toHaveBeenCalledWith(500);
     expect(response.json).toHaveBeenCalledWith({
-      error: { code: "INTERNAL_ERROR", message: "Internal server error" },
+      error: { code: "INTERNAL_ERROR", message: "Error interno del servidor" },
     });
     expect(JSON.stringify((response.json as ReturnType<typeof vi.fn>).mock.calls)).not.toContain(
       "private Firebase",
@@ -215,7 +215,7 @@ describe("HTTP error middleware", () => {
     routeNotFound({} as Request, response, vi.fn() as NextFunction);
     expect(response.status).toHaveBeenCalledWith(404);
     expect(response.json).toHaveBeenCalledWith({
-      error: { code: "NOT_FOUND", message: "Route not found" },
+      error: { code: "NOT_FOUND", message: "Ruta no encontrada" },
     });
   });
 });

@@ -80,7 +80,7 @@ describe("OpenAPI documentation", () => {
       type: "http",
       scheme: "bearer",
       bearerFormat: "JWT",
-      description: "Firebase ID token: Authorization: Bearer <token>",
+      description: "Se requiere un Firebase ID Token válido en el encabezado Authorization: Bearer <token>",
     });
   });
 
@@ -149,13 +149,13 @@ describe("OpenAPI documentation", () => {
     ).toContain("knownGuests.length + openSlots");
     expect(
       openApiDocument.components.schemas.CreateInvitationInput.description,
-    ).toContain("greater than or equal to 1");
+    ).toContain("mayor o igual a 1");
   });
 
   it("documents public health CORS rejection without requiring bearer auth", () => {
     const health = openApiDocument.paths["/api/health"].get;
     expect(health.responses["403"]).toMatchObject({
-      description: "Origin forbidden by the global CORS policy",
+      description: "Origen no permitido por la política global de CORS",
       content: {
         "application/json": {
           schema: { $ref: "#/components/schemas/ErrorResponse" },
@@ -223,5 +223,5 @@ it("documents restore-replacement with the same required version header as remov
   expect(restore.parameters.find(parameter => parameter.name === "X-Invitation-Version")).toEqual(remove.parameters.find(parameter => parameter.name === "X-Invitation-Version"));
   expect(restore).not.toHaveProperty("requestBody");
   expect(Object.keys(restore.responses).sort()).toEqual(["200", "400", "401", "403", "404", "412", "500"]);
-  expect(restore.responses["412"].description).toBe("PRECONDITION_FAILED: Invitation has changed; reload before restoring a replacement");
+  expect(restore.responses["412"].description).toBe("PRECONDITION_FAILED: La invitación cambió. Recarga los datos antes de restaurar al invitado original.");
 });

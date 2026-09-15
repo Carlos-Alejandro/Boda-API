@@ -19,7 +19,7 @@ function makeApp(origins: readonly string[]): Express {
     response.status(200).json({ status: "ok", service: "boda-api" });
   });
   app.get("/api/admin/invitations", (_request, response) => {
-    sendError(response, 401, "UNAUTHORIZED", "Authentication required");
+    sendError(response, 401, "UNAUTHORIZED", "Se requiere autenticación");
   });
   app.use(routeNotFound);
   app.use(errorHandler);
@@ -74,7 +74,7 @@ describe("CORS", () => {
     expect(response.status).toBe(403);
     expect(response.headers.get("access-control-allow-origin")).toBeNull();
     await expect(response.json()).resolves.toEqual({
-      error: { code: "FORBIDDEN", message: "Forbidden" },
+      error: { code: "FORBIDDEN", message: "Acceso denegado" },
     });
   });
 

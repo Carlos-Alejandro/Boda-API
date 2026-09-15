@@ -12,7 +12,7 @@ export function createCorsMiddleware(allowedOrigins: readonly string[]) {
         callback(null, true);
         return;
       }
-      callback(new HttpError(403, "FORBIDDEN", "Forbidden"));
+      callback(new HttpError(403, "FORBIDDEN", "Acceso denegado"));
     },
   });
 }

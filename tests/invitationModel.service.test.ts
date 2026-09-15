@@ -201,10 +201,10 @@ describe("removeGuest", () => {
     expect(removeGuest(makeInvitation([knownGuest(), openGuest()]), 0).guests).toEqual([openGuest()]);
   });
   it.each([knownGuest(), openGuest()])("rejects last $type", guest => {
-    expect(() => removeGuest(makeInvitation([guest]), 0)).toThrow("Invitation capacity must be a positive integer");
+    expect(() => removeGuest(makeInvitation([guest]), 0)).toThrow("La capacidad de la invitación debe ser un número entero mayor que cero");
   });
   it("rejects replacement", () => {
-    expect(() => removeGuest(makeInvitation([replacementGuest(), knownGuest()]), 0)).toThrow("Replacement guests cannot be removed");
+    expect(() => removeGuest(makeInvitation([replacementGuest(), knownGuest()]), 0)).toThrow("No se pueden eliminar invitados de reemplazo");
   });
   it.each([-1, 0.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1, 2])("rejects invalid index %s", index => {
     expect(() => removeGuest(makeInvitation([knownGuest(), openGuest()]), index)).toThrow(DomainError);

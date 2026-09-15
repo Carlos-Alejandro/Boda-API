@@ -14,16 +14,16 @@ function isObject(value: unknown): value is Record<string, unknown> {
 }
 
 export function parseListInvitationsQuery(query: unknown): ListInvitationFilters {
-  if (!isObject(query)) throw new DomainError("Query must be an object");
+  if (!isObject(query)) throw new DomainError("Los parámetros de consulta deben ser un objeto");
 
   const extraField = Object.keys(query).find((field) => !ALLOWED_FIELDS.has(field));
-  if (extraField) throw new DomainError(`Unexpected query parameter: ${extraField}`);
+  if (extraField) throw new DomainError(`Parámetro de consulta no permitido: ${extraField}`);
 
   const filters: ListInvitationFilters = {};
 
   if (Object.hasOwn(query, "search")) {
     if (typeof query.search !== "string") {
-      throw new DomainError("search must be a string");
+      throw new DomainError("search debe ser un texto");
     }
     const search = query.search.trim();
     if (search) filters.search = search;
@@ -34,14 +34,14 @@ export function parseListInvitationsQuery(query: unknown): ListInvitationFilters
       typeof query.rsvpStatus !== "string" ||
       !RSVP_STATUSES.has(query.rsvpStatus as RsvpStatus)
     ) {
-      throw new DomainError("rsvpStatus is invalid");
+      throw new DomainError("rsvpStatus es inválido");
     }
     filters.rsvpStatus = query.rsvpStatus as RsvpStatus;
   }
 
   if (Object.hasOwn(query, "archived")) {
     if (query.archived !== "true" && query.archived !== "false") {
-      throw new DomainError('archived must be "true" or "false"');
+      throw new DomainError('archived debe ser "true" o "false"');
     }
     filters.archived = query.archived === "true";
   }

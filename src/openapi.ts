@@ -1,5 +1,5 @@
 const errorResponse = {
-  description: "Error response",
+  description: "Respuesta de error",
   content: {
     "application/json": {
       schema: { $ref: "#/components/schemas/ErrorResponse" },
@@ -8,7 +8,7 @@ const errorResponse = {
 } as const;
 
 const invitationResponse = {
-  description: "Invitation",
+  description: "Invitación",
   content: {
     "application/json": {
       schema: { $ref: "#/components/schemas/Invitation" },
@@ -21,7 +21,7 @@ const invitationIdParameter = {
   in: "path",
   required: true,
   schema: { type: "string" },
-  description: "Invitation ID",
+  description: "ID de invitación",
 } as const;
 
 const secured = [{ firebaseBearer: [] }] as const;
@@ -31,22 +31,22 @@ export const openApiDocument = {
   info: {
     title: "Boda API",
     version: "1.0.0",
-    description: "Administrative API for wedding invitations.",
+    description: "API administrativa para invitaciones de boda.",
   },
-  servers: [{ url: "/", description: "Current deployment" }],
+  servers: [{ url: "/", description: "Despliegue actual" }],
   tags: [
-    { name: "Health" },
-    { name: "Admin" },
-    { name: "Invitations" },
+    { name: "Estado del servicio" },
+    { name: "Administración" },
+    { name: "Invitaciones" },
   ],
   paths: {
     "/api/health": {
       get: {
-        tags: ["Health"],
-        summary: "Public health check",
+        tags: ["Estado del servicio"],
+        summary: "Consultar el estado público del servicio",
         responses: {
           "200": {
-            description: "Service is healthy",
+            description: "El servicio funciona correctamente",
             content: {
               "application/json": {
                 schema: { $ref: "#/components/schemas/PublicHealth" },
@@ -55,7 +55,7 @@ export const openApiDocument = {
           },
           "403": {
             ...errorResponse,
-            description: "Origin forbidden by the global CORS policy",
+            description: "Origen no permitido por la política global de CORS",
           },
           "500": errorResponse,
         },
@@ -63,12 +63,12 @@ export const openApiDocument = {
     },
     "/api/admin/health": {
       get: {
-        tags: ["Admin"],
-        summary: "Authenticated health check",
+        tags: ["Administración"],
+        summary: "Consultar el estado del servicio con autenticación",
         security: secured,
         responses: {
           "200": {
-            description: "Authenticated service health",
+            description: "Estado del servicio con autenticación",
             content: {
               "application/json": {
                 schema: { $ref: "#/components/schemas/AdminHealth" },
@@ -83,17 +83,17 @@ export const openApiDocument = {
     },
     "/api/admin/invitations": {
       get: {
-        tags: ["Invitations"],
-        summary: "List invitations",
+        tags: ["Invitaciones"],
+        summary: "Listar invitaciones",
         description:
-          "Filters are combined with AND. Search is partial and case-insensitive across id and displayName. Without archived, active and archived invitations are returned; legacy documents without isArchived are active.",
+          "Los filtros se combinan con AND. La búsqueda encuentra coincidencias parciales en id y displayName, sin distinguir mayúsculas de minúsculas. Si se omite archived, se devuelven invitaciones activas y archivadas; los documentos antiguos sin isArchived se consideran activos.",
         security: secured,
         parameters: [
           {
             name: "search",
             in: "query",
             schema: { type: "string" },
-            description: "Partial, case-insensitive match against id or displayName.",
+            description: "Coincidencia parcial en id o displayName, sin distinguir mayúsculas de minúsculas.",
           },
           {
             name: "rsvpStatus",
@@ -107,12 +107,12 @@ export const openApiDocument = {
             name: "archived",
             in: "query",
             schema: { type: "boolean" },
-            description: "true returns archived; false returns active including legacy.",
+            description: "true devuelve invitaciones archivadas; false devuelve las activas, incluidas las de documentos antiguos.",
           },
         ],
         responses: {
           "200": {
-            description: "Filtered invitation list",
+            description: "Lista de invitaciones filtrada",
             content: {
               "application/json": {
                 schema: { $ref: "#/components/schemas/InvitationList" },
@@ -126,8 +126,8 @@ export const openApiDocument = {
         },
       },
       post: {
-        tags: ["Invitations"],
-        summary: "Create an invitation",
+        tags: ["Invitaciones"],
+        summary: "Crear una invitación",
         security: secured,
         requestBody: {
           required: true,
@@ -148,8 +148,8 @@ export const openApiDocument = {
     },
     "/api/admin/invitations/{id}": {
       get: {
-        tags: ["Invitations"],
-        summary: "Get an invitation",
+        tags: ["Invitaciones"],
+        summary: "Obtener una invitación por ID",
         security: secured,
         parameters: [invitationIdParameter],
         responses: {
@@ -161,8 +161,8 @@ export const openApiDocument = {
         },
       },
       patch: {
-        tags: ["Invitations"],
-        summary: "Update editable invitation fields",
+        tags: ["Invitaciones"],
+        summary: "Actualizar los campos editables de la invitación",
         security: secured,
         parameters: [invitationIdParameter],
         requestBody: {
@@ -185,10 +185,10 @@ export const openApiDocument = {
     },
     "/api/admin/invitations/{id}/capacity": {
       patch: {
-        tags: ["Invitations"],
-        summary: "Change invitation capacity",
+        tags: ["Invitaciones"],
+        summary: "Cambiar la capacidad de la invitación",
         description:
-          "Increasing capacity adds empty open slots. Reduction only removes removable open slots and returns 400 when it cannot be performed safely.",
+          "Al aumentar la capacidad se agregan lugares vacíos de tipo open. Al reducirla solo se eliminan lugares de tipo open que se puedan quitar; se devuelve 400 si no es posible hacerlo de forma segura.",
         security: secured,
         parameters: [invitationIdParameter],
         requestBody: {
@@ -211,9 +211,9 @@ export const openApiDocument = {
     },
     "/api/admin/invitations/{id}/guests/{guestIndex}/restore-replacement": {
       post: {
-        tags: ["Invitations"],
-        summary: "Restore a replaced guest",
-        description: "Restores the original guest when the selected slot is a valid replacement. Requires X-Invitation-Version; the version is checked against the snapshot inside the transaction before using the index. On 412 reload and confirm again; never automatically retry with a newer version.",
+        tags: ["Invitaciones"],
+        summary: "Restaurar al invitado original",
+        description: "Restaura al invitado original cuando el lugar seleccionado contiene un invitado de reemplazo válido. Requiere X-Invitation-Version; la versión se compara con la del snapshot leído dentro de la transacción antes de usar el índice. Ante un 412, recarga los datos y confirma de nuevo; nunca reintentes automáticamente con una versión más reciente.",
         security: secured,
         parameters: [
           invitationIdParameter,
@@ -225,7 +225,7 @@ export const openApiDocument = {
           },
           { name: "X-Invitation-Version", in: "header", required: true,
             schema: { type: "string", maxLength: 4096, pattern: "^iv1\\.[A-Za-z0-9_-]+$" },
-            description: "One opaque invitation version. Missing or malformed returns 400; a different version returns 412." },
+            description: "Una sola versión opaca de la invitación. Si falta o tiene un formato inválido, se devuelve 400; si no coincide con la versión actual, se devuelve 412." },
         ],
         responses: {
           "200": invitationResponse,
@@ -233,25 +233,25 @@ export const openApiDocument = {
           "401": errorResponse,
           "403": errorResponse,
           "404": errorResponse,
-          "412": { ...errorResponse, description: "PRECONDITION_FAILED: Invitation has changed; reload before restoring a replacement" },
+          "412": { ...errorResponse, description: "PRECONDITION_FAILED: La invitación cambió. Recarga los datos antes de restaurar al invitado original." },
           "500": errorResponse,
         },
       },
     },
     "/api/admin/invitations/{id}/guests/{guestIndex}/remove": {
       post: {
-        tags: ["Invitations"],
-        summary: "Remove a known or open guest and reduce capacity",
-        description: "Removes the selected position regardless of name or attendance. Replacements cannot be removed. At least one slot must remain. Preserves RSVP, replacementsAllowed and archive state; archived invitations are supported. Version is checked inside the transaction before using the index. On 412 reload and confirm again; never automatically retry with a newer version.",
+        tags: ["Invitaciones"],
+        summary: "Eliminar un invitado de tipo known u open y reducir la capacidad",
+        description: "Elimina la posición seleccionada sin importar el nombre ni la asistencia. No se pueden eliminar invitados de reemplazo. Debe quedar al menos un lugar. Conserva RSVP, replacementsAllowed y el estado de archivo; admite invitaciones archivadas. La versión se comprueba dentro de la transacción antes de usar el índice. Ante un 412, recarga los datos y confirma de nuevo; nunca reintentes automáticamente con una versión más reciente.",
         security: secured,
         parameters: [
-          { ...invitationIdParameter, description: "A single document ID segment; slashes are forbidden. Legacy IDs are supported." },
+          { ...invitationIdParameter, description: "Un ID de documento de un solo segmento; no se permiten barras diagonales. Se admiten IDs antiguos." },
           { name: "guestIndex", in: "path", required: true,
             schema: { type: "integer", minimum: 0, maximum: 9007199254740991 },
-            description: "Canonical decimal index in the original guests array, without signs, spaces or leading zeros." },
+            description: "Índice decimal canónico del invitado en el arreglo guests original, sin signos, espacios ni ceros a la izquierda." },
           { name: "X-Invitation-Version", in: "header", required: true,
             schema: { type: "string", maxLength: 4096, pattern: "^iv1\\.[A-Za-z0-9_-]+$" },
-            description: "One opaque invitation version. Missing or malformed returns 400; a different version returns 412." },
+            description: "Una sola versión opaca de la invitación. Si falta o tiene un formato inválido, se devuelve 400; si no coincide con la versión actual, se devuelve 412." },
         ],
         responses: {
           "200": invitationResponse,
@@ -259,16 +259,16 @@ export const openApiDocument = {
           "401": errorResponse,
           "403": errorResponse,
           "404": errorResponse,
-          "412": { ...errorResponse, description: "PRECONDITION_FAILED: Invitation has changed; reload before removing a guest" },
+          "412": { ...errorResponse, description: "PRECONDITION_FAILED: La invitación cambió. Recarga los datos antes de eliminar un invitado." },
           "500": errorResponse,
         },
       },
     },
     "/api/admin/invitations/{id}/archive": {
       post: {
-        tags: ["Invitations"],
-        summary: "Archive an invitation",
-        description: "Idempotent logical archive; the document is not physically deleted.",
+        tags: ["Invitaciones"],
+        summary: "Archivar una invitación",
+        description: "Archivado lógico idempotente; el documento no se elimina físicamente.",
         security: secured,
         parameters: [invitationIdParameter],
         responses: {
@@ -282,9 +282,9 @@ export const openApiDocument = {
     },
     "/api/admin/invitations/{id}/restore": {
       post: {
-        tags: ["Invitations"],
-        summary: "Restore an archived invitation",
-        description: "Idempotently restores an archived invitation.",
+        tags: ["Invitaciones"],
+        summary: "Restaurar una invitación archivada",
+        description: "Restaura una invitación archivada de forma idempotente.",
         security: secured,
         parameters: [invitationIdParameter],
         responses: {
@@ -303,7 +303,7 @@ export const openApiDocument = {
         type: "http",
         scheme: "bearer",
         bearerFormat: "JWT",
-        description: "Firebase ID token: Authorization: Bearer <token>",
+        description: "Se requiere un Firebase ID Token válido en el encabezado Authorization: Bearer <token>",
       },
     },
     schemas: {
@@ -317,7 +317,7 @@ export const openApiDocument = {
           attending: { type: "boolean", nullable: true },
           originalName: {
             type: "string",
-            description: "Present when type is replacement; may exist on legacy non-replacement data.",
+            description: "Presente cuando type es replacement; también puede existir en datos antiguos de invitados que no son de reemplazo.",
           },
         },
       },
@@ -339,7 +339,7 @@ export const openApiDocument = {
         ],
         properties: {
           id: { type: "string" },
-          version: { type: "string", readOnly: true, description: "Opaque snapshot version. Return unchanged in X-Invitation-Version for remove and restore-replacement; not persisted as document data." },
+          version: { type: "string", readOnly: true, description: "Versión opaca del snapshot. Envíala sin cambios en X-Invitation-Version para remove y restore-replacement; no se guarda como dato del documento." },
           displayName: { type: "string" },
           maxGuests: { type: "integer", minimum: 1 },
           replacementsAllowed: { type: "boolean" },
@@ -376,7 +376,7 @@ export const openApiDocument = {
       CreateInvitationInput: {
         type: "object",
         description:
-          "At least one total guest slot is required: knownGuests.length + openSlots must be greater than or equal to 1.",
+          "Se requiere al menos un lugar para invitados en total: knownGuests.length + openSlots debe ser mayor o igual a 1.",
         additionalProperties: false,
         required: ["displayName", "knownGuests", "openSlots", "replacementsAllowed"],
         properties: {
