@@ -8,12 +8,23 @@ import type {
 
 const OPEN_GUEST_SHORT_NAME = "Acompañante";
 
-function normalizeName(name: string): string {
+export function normalizeName(name: string): string {
   return name.trim().replace(/\s+/g, " ");
 }
 
 function getShortName(name: string): string {
   return normalizeName(name).split(" ")[0];
+}
+
+export function updateGuestName<T extends Guest>(guest: T, name: string): T {
+  const normalizedName = normalizeName(name);
+  if (!normalizedName) throw new DomainError("name debe ser un texto no vacío");
+  if (!guest.name.trim()) {
+    throw new DomainError(guest.type === "open"
+      ? "Este espacio abierto todavía no tiene una persona asignada."
+      : "El invitado todavía no tiene una persona identificada.");
+  }
+  return { ...guest, name: normalizedName, shortName: getShortName(normalizedName) };
 }
 
 function createOpenGuest(): Guest {

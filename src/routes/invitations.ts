@@ -2,6 +2,7 @@ import { Router } from "express";
 
 import {
   removeInvitationGuestController,
+  updateInvitationGuestController,
   archiveInvitationController,
   changeInvitationCapacityController,
   createInvitationController,
@@ -14,6 +15,12 @@ import {
 import { authenticateAdmin } from "../middlewares/authenticateAdmin";
 
 const invitationsRouter = Router();
+
+invitationsRouter.patch(
+  "/:id/guests/:guestIndex",
+  authenticateAdmin,
+  updateInvitationGuestController,
+);
 
 invitationsRouter.post(
   "/:id/guests/:guestIndex/remove",

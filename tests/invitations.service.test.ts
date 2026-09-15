@@ -47,6 +47,7 @@ import {
   listInvitations,
   mapInvitationDocument,
   removeInvitationGuest,
+  updateInvitationGuest,
   mapInvitationSnapshot,
   restoreInvitationReplacement,
   restoreArchivedInvitation,
@@ -1030,5 +1031,112 @@ describe("versioned write responses", () => {
       expect(firestoreMocks.transactionUpdate).not.toHaveBeenCalled();
       expect(firestoreMocks.getDocument).not.toHaveBeenCalled();
     }
+  });
+});
+
+describe("updateInvitationGuest transaction", () => {
+  const time = new Timestamp(100, 123456000);
+  const snapshot = (data = validDocument(), updateTime = time, id = "KM8P2XQ7") => ({
+    exists: true, id, ref: { path: "invitations/" + id }, updateTime, data: () => data,
+  });
+  const version = (snap = snapshot()) => mapInvitationSnapshot(snap as never).version;
+  beforeEach(() => {
+    vi.resetAllMocks();
+    firestoreMocks.document.mockReturnValue({ get: firestoreMocks.getDocument });
+    firestoreMocks.runTransaction.mockImplementation(async callback => callback({ get: firestoreMocks.transactionGet, update: firestoreMocks.transactionUpdate }));
+    firestoreMocks.transactionGet.mockResolvedValue(snapshot());
+    firestoreMocks.getDocument.mockResolvedValue(snapshot(validDocument(), new Timestamp(101, 0)));
+  });
+  it.each(["known", "open", "replacement"].flatMap(type => [true, false, null].flatMap(attending => ["pending", "partial", "confirmed", "declined"].map(rsvpStatus => ({ type, attending, rsvpStatus })))))("preserves all state for %j", async ({ type, attending, rsvpStatus }) => {
+    const edited = { name: "Carlos Martínez", shortName: "Carlos", type, attending, originalName: "Cassandra Us Hernandez", legacyField: { nested: [1, 2] } };
+    const other = { ...validDocument().guests[1], legacyOther: "conservar" };
+    const data = { ...validDocument(), rsvpStatus, isArchived: true, archivedAt: time, editOverrideUntil: time, legacyInvitation: true, guests: [edited, other] };
+    firestoreMocks.transactionGet.mockResolvedValue(snapshot(data as never));
+    const updatedGuest = { ...edited, name: "José Carlos Martínez", shortName: "José" };
+    const finalSnapshot = snapshot({ ...data, guests: [updatedGuest, other] } as never, new Timestamp(102, 0));
+    firestoreMocks.getDocument.mockResolvedValue(finalSnapshot);
+    const result = await updateInvitationGuest("KM8P2XQ7", 0, "  José   Carlos Martínez  ", version());
+    const write = firestoreMocks.transactionUpdate.mock.calls[0][1];
+    expect(write).toEqual({ guests: [updatedGuest, other], updatedAt: FieldValue.serverTimestamp() });
+    expect(write.guests[1]).toBe(other);
+    expect(edited.name).toBe("Carlos Martínez");
+    expect(result).toEqual(mapInvitationSnapshot(finalSnapshot as never));
+    expect(result?.version).not.toBe(version());
+  });
+  it("corrects replacement spelling and preserves originalName", async () => {
+    const guest = { name: "Mariana Prueva", shortName: "Mariana", type: "replacement", attending: true, originalName: "Cassandra Us Hernandez" };
+    firestoreMocks.transactionGet.mockResolvedValue(snapshot({ ...validDocument(), guests: [guest, validDocument().guests[1]] }));
+    await updateInvitationGuest("KM8P2XQ7", 0, "Mariana Prueba", version());
+    expect(firestoreMocks.transactionUpdate.mock.calls[0][1]).toEqual({ guests: [{ ...guest, name: "Mariana Prueba" }, validDocument().guests[1]], updatedAt: FieldValue.serverTimestamp() });
+  });
+  it.each(["", "   "])("rejects empty target name %j without writing", async name => {
+    await expect(updateInvitationGuest("KM8P2XQ7", 0, name, version())).rejects.toThrow(DomainError);
+    expect(firestoreMocks.transactionUpdate).not.toHaveBeenCalled();
+  });
+  it("returns null for missing invitation", async () => {
+    firestoreMocks.transactionGet.mockResolvedValue({ exists: false });
+    expect(await updateInvitationGuest("missing", 0, "José Carlos Martínez", version())).toBeNull();
+    expect(firestoreMocks.transactionUpdate).not.toHaveBeenCalled();
+  });
+  it.each([
+    ["invalid document", { ...validDocument(), maxGuests: 3 }, 0, /guests length/],
+    ["out of range", validDocument(), 2, /fuera de rango/],
+    ["empty open", { ...validDocument(), guests: [{ name: "  ", shortName: "Acompañante", type: "open", attending: null }, validDocument().guests[1]] }, 0, /no tiene una persona asignada/],
+  ])("rejects %s without writing", async (_name, data, index, message) => {
+    firestoreMocks.transactionGet.mockResolvedValue(snapshot(data as ReturnType<typeof validDocument>));
+    await expect(updateInvitationGuest("KM8P2XQ7", index as number, "José Carlos Martínez", version())).rejects.toThrow(message as RegExp);
+    expect(firestoreMocks.transactionUpdate).not.toHaveBeenCalled();
+    expect(firestoreMocks.getDocument).not.toHaveBeenCalled();
+  });
+  it.each(["old", "other invitation"])("rejects %s version before interpreting displaced index", async reason => {
+    const expected = reason === "old" ? version(snapshot(validDocument(), new Timestamp(99, 0))) : version(snapshot(validDocument(), time, "OTHER"));
+    await expect(updateInvitationGuest("KM8P2XQ7", 999, "José Carlos Martínez", expected)).rejects.toMatchObject({ statusCode: 412, code: "PRECONDITION_FAILED" });
+    expect(firestoreMocks.transactionUpdate).not.toHaveBeenCalled();
+  });
+  it("rechecks the original version on transaction retry and does not commit a shifted edit", async () => {
+    let committed = false;
+    const update = vi.fn();
+    firestoreMocks.runTransaction.mockImplementation(async callback => {
+      await callback({ get: async () => snapshot(), update }); // first attempt aborted by contention
+      update.mockClear();
+      const latest = { ...validDocument(), maxGuests: 1, guests: validDocument().guests.slice(1) };
+      await callback({ get: async () => snapshot(latest, new Timestamp(101, 0)), update });
+      committed = true;
+    });
+    await expect(updateInvitationGuest("KM8P2XQ7", 0, "José Carlos Martínez", version())).rejects.toMatchObject({ statusCode: 412 });
+    expect(update).not.toHaveBeenCalled();
+    expect(committed).toBe(false);
+    expect(firestoreMocks.getDocument).not.toHaveBeenCalled();
+  });
+  it("propagates commit failure without rereading or confirming changes", async () => {
+    firestoreMocks.runTransaction.mockImplementation(async callback => {
+      await callback({ get: async () => snapshot(), update: vi.fn() });
+      throw new Error("commit failed");
+    });
+    await expect(updateInvitationGuest("KM8P2XQ7", 0, "José Carlos Martínez", version())).rejects.toThrow("commit failed");
+    expect(firestoreMocks.getDocument).not.toHaveBeenCalled();
+    expect(firestoreMocks.runTransaction).toHaveBeenCalledOnce();
+  });
+  it("does not retry a committed edit when rereading fails", async () => {
+    firestoreMocks.getDocument.mockRejectedValue(new Error("read failed"));
+    await expect(updateInvitationGuest("KM8P2XQ7", 0, "José Carlos Martínez", version())).rejects.toThrow("read failed");
+    expect(firestoreMocks.runTransaction).toHaveBeenCalledOnce();
+    expect(firestoreMocks.transactionUpdate).toHaveBeenCalledOnce();
+  });
+  it("does not retry when the committed document disappears before rereading", async () => {
+    firestoreMocks.getDocument.mockResolvedValue({ exists: false });
+    await expect(updateInvitationGuest("KM8P2XQ7", 0, "Ana", version())).rejects.toThrow("Updated invitation could not be read back");
+    expect(firestoreMocks.runTransaction).toHaveBeenCalledOnce();
+    expect(firestoreMocks.transactionUpdate).toHaveBeenCalledOnce();
+  });
+  it.each(["known", "open", "replacement"])("rejects an unnamed %s without writing", async type => {
+    firestoreMocks.transactionGet.mockResolvedValue(snapshot({ ...validDocument(), guests: [{ name: "", shortName: "Guest", type, attending: null, originalName: "Original" }, validDocument().guests[1]] } as never));
+    await expect(updateInvitationGuest("KM8P2XQ7", 0, "Ana", version())).rejects.toThrow(DomainError);
+    expect(firestoreMocks.transactionUpdate).not.toHaveBeenCalled();
+  });
+  it("rejects missing updateTime rather than using updatedAt", async () => {
+    firestoreMocks.transactionGet.mockResolvedValue({ ...snapshot(), updateTime: undefined });
+    await expect(updateInvitationGuest("KM8P2XQ7", 0, "José Carlos Martínez", version())).rejects.toThrow(DataIntegrityError);
+    expect(firestoreMocks.transactionUpdate).not.toHaveBeenCalled();
   });
 });

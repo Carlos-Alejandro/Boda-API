@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 
 import {
   removeInvitationGuest,
+  updateInvitationGuest,
   archiveInvitation,
   changeCapacity,
   createInvitation,
@@ -17,6 +18,7 @@ import { parseCreateInvitationInput } from "../validation/createInvitationInput"
 import { parseUpdateInvitationInput } from "../validation/updateInvitationInput";
 import { parseChangeInvitationCapacityInput } from "../validation/changeInvitationCapacityInput";
 import { parseGuestIndex } from "../validation/guestIndex";
+import { parseUpdateGuestInput } from "../validation/updateGuestInput";
 import { parseListInvitationsQuery } from "../validation/listInvitationsQuery";
 import { parseInvitationId } from "../validation/invitationId";
 import { parseInvitationVersion } from "../services/invitationVersion.service";
@@ -32,6 +34,20 @@ function toHttpInvitation(invitation: VersionedInvitation) {
 
 function invitationNotFound(): never {
   throw new HttpError(404, "INVITATION_NOT_FOUND", "Invitación no encontrada");
+}
+
+export async function updateInvitationGuestController(
+  request: Request<{ id: string; guestIndex: string }>,
+  response: Response,
+): Promise<void> {
+  const id = parseInvitationId(request.params.id);
+  const guestIndex = parseGuestIndex(request.params.guestIndex);
+  const values = request.headersDistinct["x-invitation-version"];
+  const version = parseInvitationVersion(values?.length === 1 ? values[0] : values);
+  const { name } = parseUpdateGuestInput(request.body);
+  const invitation = await updateInvitationGuest(id, guestIndex, name, version);
+  if (!invitation) invitationNotFound();
+  response.status(200).json(toHttpInvitation(invitation));
 }
 
 export async function listInvitationsController(

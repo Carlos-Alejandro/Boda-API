@@ -238,6 +238,39 @@ export const openApiDocument = {
         },
       },
     },
+    "/api/admin/invitations/{id}/guests/{guestIndex}": {
+      patch: {
+        tags: ["Invitaciones"],
+        summary: "Corregir el nombre de un invitado identificado",
+        description: "Corrige name en known, open o replacement ya nombrados; rechaza espacios abiertos vacíos. Normaliza espacios y deriva shortName de la primera palabra. Conserva asistencia, originalName, RSVP, capacidad, orden, campos legacy y archivo; admite invitaciones archivadas. Compara la versión dentro de la transacción antes del índice. Ante 412 recarga y confirma de nuevo; nunca reintentes automáticamente con una versión nueva.",
+        security: secured,
+        parameters: [
+          { ...invitationIdParameter, description: "Un ID de documento de un solo segmento; no se permiten barras diagonales. Se admiten IDs antiguos." },
+          { name: "guestIndex", in: "path", required: true,
+            schema: { type: "integer", minimum: 0, maximum: 9007199254740991 },
+            description: "Índice decimal canónico del invitado en el arreglo guests original, sin signos, espacios ni ceros a la izquierda." },
+          { name: "X-Invitation-Version", in: "header", required: true,
+            schema: { type: "string", maxLength: 4096, pattern: "^iv1\\.[A-Za-z0-9_-]+$" },
+            description: "Una sola versión opaca de la invitación. Si falta o tiene un formato inválido, se devuelve 400; si no coincide con la versión actual, se devuelve 412." },
+        ],
+        requestBody: {
+          required: true,
+          content: { "application/json": { schema: {
+            type: "object", additionalProperties: false, required: ["name"],
+            properties: { name: { type: "string", minLength: 1, description: "Nombre no vacío tras normalizar espacios.", example: "José Carlos Martínez" } },
+          } } },
+        },
+        responses: {
+          "200": invitationResponse,
+          "400": errorResponse,
+          "401": errorResponse,
+          "403": errorResponse,
+          "404": errorResponse,
+          "412": { ...errorResponse, description: "PRECONDITION_FAILED: La invitación cambió. Recarga los datos antes de corregir el nombre del invitado." },
+          "500": errorResponse,
+        },
+      },
+    },
     "/api/admin/invitations/{id}/guests/{guestIndex}/remove": {
       post: {
         tags: ["Invitaciones"],
@@ -339,7 +372,7 @@ export const openApiDocument = {
         ],
         properties: {
           id: { type: "string" },
-          version: { type: "string", readOnly: true, description: "Versión opaca del snapshot. Envíala sin cambios en X-Invitation-Version para remove y restore-replacement; no se guarda como dato del documento." },
+          version: { type: "string", readOnly: true, description: "Versión opaca del snapshot. Envíala sin cambios en X-Invitation-Version para remove, restore-replacement y edición de nombre; no se guarda como dato del documento." },
           displayName: { type: "string" },
           maxGuests: { type: "integer", minimum: 1 },
           replacementsAllowed: { type: "boolean" },

@@ -21,6 +21,7 @@ import {
   createInvitationData,
   restoreReplacement,
   removeGuest,
+  updateGuestName,
 } from "./invitationModel.service";
 
 import { invitationVersion } from "./invitationVersion.service";
@@ -370,6 +371,36 @@ export async function removeInvitationGuest(
       maxGuests: changed.maxGuests,
       updatedAt: FieldValue.serverTimestamp(),
     });
+    return true;
+  });
+  if (!exists) return null;
+  const updated = await document.get();
+  if (!updated.exists) throw new Error("Updated invitation could not be read back");
+  return mapInvitationSnapshot(updated);
+}
+
+export async function updateInvitationGuest(
+  id: string,
+  guestIndex: number,
+  name: string,
+  expectedVersion: string,
+): Promise<VersionedInvitation | null> {
+  const document = firestore.collection("invitations").doc(parseInvitationId(id));
+  const exists = await firestore.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(document);
+    if (!snapshot.exists) return false;
+    const current = mapInvitationSnapshot(snapshot);
+    if (current.version !== expectedVersion) {
+      throw new HttpError(412, "PRECONDITION_FAILED",
+        "La invitación cambió. Recarga los datos antes de corregir el nombre del invitado.");
+    }
+    if (!Number.isSafeInteger(guestIndex) || guestIndex < 0 || guestIndex >= current.guests.length) {
+      throw new DomainError("guestIndex está fuera de rango");
+    }
+    // The mapper validates invariants; write from raw objects to retain legacy fields.
+    const guests = [...snapshot.data()!.guests] as Guest[];
+    guests[guestIndex] = updateGuestName(guests[guestIndex], name);
+    transaction.update(document, { guests, updatedAt: FieldValue.serverTimestamp() });
     return true;
   });
   if (!exists) return null;

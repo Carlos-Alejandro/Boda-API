@@ -50,6 +50,7 @@ describe("OpenAPI documentation", () => {
         "/api/admin/invitations/{id}/capacity",
         "/api/admin/invitations/{id}/guests/{guestIndex}/restore-replacement",
         "/api/admin/invitations/{id}/guests/{guestIndex}/remove",
+        "/api/admin/invitations/{id}/guests/{guestIndex}",
         "/api/admin/invitations/{id}/archive",
         "/api/admin/invitations/{id}/restore",
       ].sort(),
@@ -224,4 +225,13 @@ it("documents restore-replacement with the same required version header as remov
   expect(restore).not.toHaveProperty("requestBody");
   expect(Object.keys(restore.responses).sort()).toEqual(["200", "400", "401", "403", "404", "412", "500"]);
   expect(restore.responses["412"].description).toBe("PRECONDITION_FAILED: La invitación cambió. Recarga los datos antes de restaurar al invitado original.");
+});
+
+it("documents strict guest name editing", () => {
+  const operation = openApiDocument.paths["/api/admin/invitations/{id}/guests/{guestIndex}"].patch;
+  expect(operation.requestBody.required).toBe(true);
+  expect(operation.requestBody.content["application/json"].schema).toMatchObject({ type: "object", additionalProperties: false, required: ["name"] });
+  expect(Object.keys(operation.requestBody.content["application/json"].schema.properties)).toEqual(["name"]);
+  expect(Object.keys(operation.responses).sort()).toEqual(["200", "400", "401", "403", "404", "412", "500"]);
+  expect(operation.parameters.find(p => p.name === "X-Invitation-Version")?.required).toBe(true);
 });
