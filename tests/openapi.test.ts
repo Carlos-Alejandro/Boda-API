@@ -216,3 +216,12 @@ it("documents remove and read-only version without request body", () => {
   expect(openApiDocument.components.schemas.Invitation.properties.version).toMatchObject({ type: "string", readOnly: true });
   expect(openApiDocument.components.schemas.Invitation.required).toContain("version");
 });
+
+it("documents restore-replacement with the same required version header as remove", () => {
+  const restore = openApiDocument.paths["/api/admin/invitations/{id}/guests/{guestIndex}/restore-replacement"].post;
+  const remove = openApiDocument.paths["/api/admin/invitations/{id}/guests/{guestIndex}/remove"].post;
+  expect(restore.parameters.find(parameter => parameter.name === "X-Invitation-Version")).toEqual(remove.parameters.find(parameter => parameter.name === "X-Invitation-Version"));
+  expect(restore).not.toHaveProperty("requestBody");
+  expect(Object.keys(restore.responses).sort()).toEqual(["200", "400", "401", "403", "404", "412", "500"]);
+  expect(restore.responses["412"].description).toBe("PRECONDITION_FAILED: Invitation has changed; reload before restoring a replacement");
+});

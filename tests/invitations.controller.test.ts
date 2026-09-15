@@ -1,3 +1,5 @@
+import { Timestamp } from "firebase-admin/firestore";
+import { invitationVersion } from "../src/services/invitationVersion.service";
 import type { NextFunction, Request, Response } from "express";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -25,6 +27,8 @@ import {
   updateInvitationController,
 } from "../src/controllers/invitations.controller";
 import { errorHandler } from "../src/middlewares/errorHandler";
+
+const restoreVersion = invitationVersion("invitations/KM8P2XQ7", new Timestamp(100, 123456000));
 
 function responseMock() {
   const response = {
@@ -304,7 +308,7 @@ describe("invitations controllers", () => {
     const response = responseMock();
     await withErrorHandler(
       restoreInvitationReplacementController(
-        { params: { id: "missing", guestIndex: "0" } } as Request<{
+        { params: { id: "missing", guestIndex: "0" }, headersDistinct: { "x-invitation-version": [restoreVersion] } } as Request<{
           id: string;
           guestIndex: string;
         }>,
@@ -329,7 +333,7 @@ describe("invitations controllers", () => {
     });
     const response = responseMock();
     await restoreInvitationReplacementController(
-      { params: { id: "KM8P2XQ7", guestIndex: "0" } } as Request<{
+      { params: { id: "KM8P2XQ7", guestIndex: "0" }, headersDistinct: { "x-invitation-version": [restoreVersion] } } as Request<{
         id: string;
         guestIndex: string;
       }>,
@@ -338,6 +342,7 @@ describe("invitations controllers", () => {
     expect(serviceMocks.restoreInvitationReplacement).toHaveBeenCalledWith(
       "KM8P2XQ7",
       0,
+      restoreVersion,
     );
     expect(response.status).toHaveBeenCalledWith(200);
   });

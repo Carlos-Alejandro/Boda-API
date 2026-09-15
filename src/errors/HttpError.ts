@@ -1,3 +1,6 @@
+const RESTORE_PRECONDITION_MESSAGE =
+  "Invitation has changed; reload before restoring a replacement";
+
 const PUBLIC_HTTP_ERRORS = {
   PRECONDITION_FAILED: {
     statusCode: 412,
@@ -35,7 +38,8 @@ export class HttpError extends Error {
     if (
       !publicError ||
       statusCode !== publicError.statusCode ||
-      message !== publicError.message
+      (message !== publicError.message &&
+        !(code === "PRECONDITION_FAILED" && message === RESTORE_PRECONDITION_MESSAGE))
     ) {
       throw new TypeError("HttpError must use an approved public error definition");
     }
@@ -55,6 +59,8 @@ export function resolvePublicHttpError(
   return {
     statusCode: definition.statusCode,
     code,
-    message: definition.message,
+    message: code === "PRECONDITION_FAILED" && error.message === RESTORE_PRECONDITION_MESSAGE
+      ? RESTORE_PRECONDITION_MESSAGE
+      : definition.message,
   };
 }

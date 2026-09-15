@@ -213,7 +213,7 @@ export const openApiDocument = {
       post: {
         tags: ["Invitations"],
         summary: "Restore a replaced guest",
-        description: "Restores the original guest when the selected slot is a valid replacement.",
+        description: "Restores the original guest when the selected slot is a valid replacement. Requires X-Invitation-Version; the version is checked against the snapshot inside the transaction before using the index. On 412 reload and confirm again; never automatically retry with a newer version.",
         security: secured,
         parameters: [
           invitationIdParameter,
@@ -223,6 +223,9 @@ export const openApiDocument = {
             required: true,
             schema: { type: "integer", minimum: 0 },
           },
+          { name: "X-Invitation-Version", in: "header", required: true,
+            schema: { type: "string", maxLength: 4096, pattern: "^iv1\\.[A-Za-z0-9_-]+$" },
+            description: "One opaque invitation version. Missing or malformed returns 400; a different version returns 412." },
         ],
         responses: {
           "200": invitationResponse,
@@ -230,6 +233,7 @@ export const openApiDocument = {
           "401": errorResponse,
           "403": errorResponse,
           "404": errorResponse,
+          "412": { ...errorResponse, description: "PRECONDITION_FAILED: Invitation has changed; reload before restoring a replacement" },
           "500": errorResponse,
         },
       },
@@ -335,7 +339,7 @@ export const openApiDocument = {
         ],
         properties: {
           id: { type: "string" },
-          version: { type: "string", readOnly: true, description: "Opaque snapshot version. Return unchanged in X-Invitation-Version for remove; not persisted as document data." },
+          version: { type: "string", readOnly: true, description: "Opaque snapshot version. Return unchanged in X-Invitation-Version for remove and restore-replacement; not persisted as document data." },
           displayName: { type: "string" },
           maxGuests: { type: "integer", minimum: 1 },
           replacementsAllowed: { type: "boolean" },

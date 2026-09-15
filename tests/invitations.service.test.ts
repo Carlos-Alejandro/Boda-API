@@ -1,3 +1,4 @@
+import { invitationVersion } from "../src/services/invitationVersion.service";
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -620,6 +621,7 @@ describe("changeCapacity", () => {
 });
 
 describe("restoreInvitationReplacement", () => {
+  const version = invitationVersion("invitations/KM8P2XQ7", new Timestamp(100, 123456000));
   const knownGuest = {
     name: "Julia",
     shortName: "Julia",
@@ -668,6 +670,36 @@ describe("restoreInvitationReplacement", () => {
     };
   }
 
+  it("rejects a stale version using the current transactional snapshot without reading outside or writing", async () => {
+    const current = snapshot([knownGuest, replacementGuest]);
+    current.updateTime = new Timestamp(101, 0);
+    firestoreMocks.transactionGet.mockResolvedValueOnce(current);
+    await expect(restoreInvitationReplacement("KM8P2XQ7", 1, version)).rejects.toMatchObject({
+      statusCode: 412, code: "PRECONDITION_FAILED",
+      message: "Invitation has changed; reload before restoring a replacement",
+    });
+    expect(firestoreMocks.transactionGet).toHaveBeenCalledWith(firestoreMocks.document.mock.results[0].value);
+    expect(firestoreMocks.getDocument).not.toHaveBeenCalled();
+    expect(firestoreMocks.transactionUpdate).not.toHaveBeenCalled();
+    expect(restoreReplacement).not.toHaveBeenCalled();
+  });
+
+  it("rechecks the version when Firestore retries with a newer snapshot", async () => {
+    const current = snapshot([knownGuest, replacementGuest]);
+    const newer = { ...current, updateTime: new Timestamp(101, 0) };
+    firestoreMocks.transactionGet.mockResolvedValueOnce(current).mockResolvedValueOnce(newer);
+    firestoreMocks.runTransaction.mockImplementationOnce(async callback => {
+      const transaction = { get: firestoreMocks.transactionGet, update: firestoreMocks.transactionUpdate };
+      await callback(transaction); // Discard the first attempt, as on a Firestore conflict.
+      firestoreMocks.transactionUpdate.mockClear();
+      return callback(transaction);
+    });
+    await expect(restoreInvitationReplacement("KM8P2XQ7", 1, version)).rejects.toMatchObject({ statusCode: 412 });
+    expect(firestoreMocks.transactionGet).toHaveBeenCalledTimes(2);
+    expect(firestoreMocks.transactionUpdate).not.toHaveBeenCalled();
+    expect(firestoreMocks.getDocument).not.toHaveBeenCalled();
+  });
+
   it("restores only the selected replacement using the transactional snapshot", async () => {
     const latestKnownGuest = { ...knownGuest, attending: false };
     const currentGuests = [latestKnownGuest, replacementGuest];
@@ -675,18 +707,22 @@ describe("restoreInvitationReplacement", () => {
     const preserved = {
       message: "Mensaje privado conservado",
       replacementsAllowed: false,
+      isArchived: true,
     };
     firestoreMocks.transactionGet.mockResolvedValueOnce(
       snapshot(currentGuests, { ...preserved, rsvpStatus: "confirmed" }),
     );
     firestoreMocks.getDocument.mockResolvedValueOnce(
-      snapshot(updatedGuests, { ...preserved, rsvpStatus: "pending" }),
+      { ...snapshot(updatedGuests, { ...preserved, rsvpStatus: "pending" }), updateTime: new Timestamp(101, 0) },
     );
 
-    const result = await restoreInvitationReplacement("KM8P2XQ7", 1);
+    const result = await restoreInvitationReplacement("KM8P2XQ7", 1, version);
 
     expect(firestoreMocks.runTransaction).toHaveBeenCalledOnce();
     expect(restoreReplacement).toHaveBeenCalledWith(replacementGuest);
+    expect(result?.version).toBe(invitationVersion("invitations/KM8P2XQ7", new Timestamp(101, 0)));
+    expect(result?.version).not.toBe(version);
+    expect(result?.isArchived).toBe(true);
     expect(result?.guests).toEqual(updatedGuests);
     expect(result?.guests).toHaveLength(result?.maxGuests ?? 0);
     expect(result?.guests[0]).toEqual(latestKnownGuest);
@@ -709,7 +745,7 @@ describe("restoreInvitationReplacement", () => {
       snapshot(updatedGuests, { rsvpStatus: "pending" }),
     );
 
-    await restoreInvitationReplacement("KM8P2XQ7", 1);
+    await restoreInvitationReplacement("KM8P2XQ7", 1, version);
 
     expect(Object.keys(firestoreMocks.transactionUpdate.mock.calls[0][1]).sort()).toEqual([
       "guests",
@@ -725,7 +761,7 @@ describe("restoreInvitationReplacement", () => {
 
   it("rejects an out-of-range guestIndex without writing", async () => {
     firestoreMocks.transactionGet.mockResolvedValueOnce(snapshot([knownGuest]));
-    await expect(restoreInvitationReplacement("KM8P2XQ7", 1)).rejects.toThrow(
+    await expect(restoreInvitationReplacement("KM8P2XQ7", 1, version)).rejects.toThrow(
       /out of range/,
     );
     expect(firestoreMocks.transactionUpdate).not.toHaveBeenCalled();
@@ -733,7 +769,7 @@ describe("restoreInvitationReplacement", () => {
 
   it("rejects a non-replacement guest without writing", async () => {
     firestoreMocks.transactionGet.mockResolvedValueOnce(snapshot([knownGuest]));
-    await expect(restoreInvitationReplacement("KM8P2XQ7", 0)).rejects.toThrow(
+    await expect(restoreInvitationReplacement("KM8P2XQ7", 0, version)).rejects.toThrow(
       /Only a replacement/,
     );
     expect(firestoreMocks.transactionUpdate).not.toHaveBeenCalled();
@@ -742,7 +778,7 @@ describe("restoreInvitationReplacement", () => {
   it("rejects a replacement without originalName without writing", async () => {
     const invalidReplacement = { ...replacementGuest, originalName: "" };
     firestoreMocks.transactionGet.mockResolvedValueOnce(snapshot([invalidReplacement]));
-    await expect(restoreInvitationReplacement("KM8P2XQ7", 0)).rejects.toThrow(
+    await expect(restoreInvitationReplacement("KM8P2XQ7", 0, version)).rejects.toThrow(
       DataIntegrityError,
     );
     expect(firestoreMocks.transactionUpdate).not.toHaveBeenCalled();
@@ -750,7 +786,7 @@ describe("restoreInvitationReplacement", () => {
 
   it("returns null without writing when the invitation does not exist", async () => {
     firestoreMocks.transactionGet.mockResolvedValueOnce({ exists: false });
-    await expect(restoreInvitationReplacement("missing", 0)).resolves.toBeNull();
+    await expect(restoreInvitationReplacement("missing", 0, version)).resolves.toBeNull();
     expect(firestoreMocks.transactionUpdate).not.toHaveBeenCalled();
   });
 });
@@ -978,7 +1014,7 @@ describe("versioned write responses", () => {
     else if (operation === "capacity") result = await changeCapacity("KM8P2XQ7", 3);
     else if (operation === "replacement") {
       firestoreMocks.transactionGet.mockResolvedValue(snap({ guests: [{ name: "Other", shortName: "Other", type: "replacement", attending: true, originalName: "Julia" }, data.guests[1]] }));
-      result = await restoreInvitationReplacement("KM8P2XQ7", 0);
+      result = await restoreInvitationReplacement("KM8P2XQ7", 0, invitationVersion("invitations/KM8P2XQ7", stamp));
     } else if (operation === "restore") {
       firestoreMocks.transactionGet.mockResolvedValue(snap({ isArchived: true, archivedAt: stamp }));
       result = await restoreArchivedInvitation("KM8P2XQ7");

@@ -270,6 +270,7 @@ export async function changeCapacity(
 export async function restoreInvitationReplacement(
   id: string,
   guestIndex: number,
+  expectedVersion: string,
 ): Promise<VersionedInvitation | null> {
   const document = firestore.collection("invitations").doc(id);
   const exists = await firestore.runTransaction(async (transaction) => {
@@ -277,6 +278,13 @@ export async function restoreInvitationReplacement(
     if (!snapshot.exists) return false;
 
     const current = mapInvitationSnapshot(snapshot);
+    if (current.version !== expectedVersion) {
+      throw new HttpError(
+        412,
+        "PRECONDITION_FAILED",
+        "Invitation has changed; reload before restoring a replacement",
+      );
+    }
     if (guestIndex < 0 || guestIndex >= current.guests.length) {
       throw new DomainError("guestIndex is out of range");
     }

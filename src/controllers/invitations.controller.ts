@@ -89,9 +89,12 @@ export async function restoreInvitationReplacementController(
   response: Response,
 ): Promise<void> {
   const guestIndex = parseGuestIndex(request.params.guestIndex);
+  const values = request.headersDistinct["x-invitation-version"];
+  const version = parseInvitationVersion(values?.length === 1 ? values[0] : values);
   const invitation = await restoreInvitationReplacement(
     request.params.id,
     guestIndex,
+    version,
   );
   if (!invitation) invitationNotFound();
   response.status(200).json(toHttpInvitation(invitation));
