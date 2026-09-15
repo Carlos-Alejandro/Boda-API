@@ -1,6 +1,6 @@
 import { invitationVersion } from "../src/services/invitationVersion.service";
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const firestoreMocks = vi.hoisted(() => ({
   createDocument: vi.fn(),
@@ -416,25 +416,6 @@ describe("updateInvitation", () => {
     await updateInvitation("KM8P2XQ7", { replacementsAllowed: false });
     expect(firestoreMocks.updateDocument).toHaveBeenCalledWith({
       replacementsAllowed: false,
-      updatedAt: expect.anything(),
-    });
-  });
-
-  it("writes editOverrideUntil as a Timestamp", async () => {
-    const date = new Date("2026-09-01T12:30:00.000Z");
-    mockExistingAndUpdated({ editOverrideUntil: Timestamp.fromDate(date) });
-    await updateInvitation("KM8P2XQ7", { editOverrideUntil: date });
-    expect(firestoreMocks.updateDocument).toHaveBeenCalledWith({
-      editOverrideUntil: Timestamp.fromDate(date),
-      updatedAt: expect.anything(),
-    });
-  });
-
-  it("writes null editOverrideUntil", async () => {
-    mockExistingAndUpdated({ editOverrideUntil: null });
-    await updateInvitation("KM8P2XQ7", { editOverrideUntil: null });
-    expect(firestoreMocks.updateDocument).toHaveBeenCalledWith({
-      editOverrideUntil: null,
       updatedAt: expect.anything(),
     });
   });
@@ -1138,5 +1119,154 @@ describe("updateInvitationGuest transaction", () => {
     firestoreMocks.transactionGet.mockResolvedValue({ ...snapshot(), updateTime: undefined });
     await expect(updateInvitationGuest("KM8P2XQ7", 0, "José Carlos Martínez", version())).rejects.toThrow(DataIntegrityError);
     expect(firestoreMocks.transactionUpdate).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("editOverrideUntil legacy mapping", () => {
+  it("maps missing and explicit undefined to null", () => {
+    const { editOverrideUntil: _ignored, ...legacy } = validDocument();
+    expect(mapInvitationDocument("legacy", legacy).editOverrideUntil).toBeNull();
+    expect(mapInvitationDocument("legacy", { ...legacy, editOverrideUntil: undefined }).editOverrideUntil).toBeNull();
+  });
+  it("maps null and Timestamp without relaxing other fields", () => {
+    const stamp = new Timestamp(200, 123000000);
+    expect(mapInvitationDocument("legacy", validDocument()).editOverrideUntil).toBeNull();
+    expect(mapInvitationDocument("legacy", { ...validDocument(), editOverrideUntil: stamp }).editOverrideUntil).toEqual(stamp.toDate());
+    expect(() => mapInvitationDocument("legacy", { ...validDocument(), updatedAt: undefined })).toThrow(DataIntegrityError);
+  });
+  it.each(["tomorrow", 123, {}, [], false, new Date(0)])("rejects present invalid override %j", editOverrideUntil => {
+    expect(() => mapInvitationDocument("legacy", { ...validDocument(), editOverrideUntil })).toThrow(DataIntegrityError);
+  });
+});
+
+describe("updateInvitation extraordinary permission transaction", () => {
+  const id = "test-override";
+  const now = Date.parse("2028-03-15T03:00:00.000Z");
+  const future = new Date(now + 86400000);
+  const time = new Timestamp(100, 123456000);
+  const snapshot = (data: Record<string, unknown> = validDocument(), updateTime = time, documentId = id) => ({
+    exists: true, id: documentId, ref: { path: "invitations/" + documentId }, updateTime, data: () => data,
+  });
+  const version = invitationVersion("invitations/" + id, time);
+  const transaction = { get: firestoreMocks.transactionGet, update: firestoreMocks.transactionUpdate };
+  beforeEach(() => {
+    vi.resetAllMocks();
+    vi.spyOn(Date, "now").mockReturnValue(now);
+    firestoreMocks.document.mockReturnValue({ get: firestoreMocks.getDocument, update: firestoreMocks.updateDocument });
+    firestoreMocks.transactionGet.mockResolvedValue(snapshot());
+    firestoreMocks.getDocument.mockResolvedValue(snapshot({ ...validDocument(), editOverrideUntil: Timestamp.fromDate(future) }, new Timestamp(101, 0)));
+    firestoreMocks.runTransaction.mockImplementation(async callback => callback(transaction));
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  it.each(["pending", "partial", "confirmed", "declined"])("grants permission and preserves raw data for %s", async rsvpStatus => {
+    const original = { ...validDocument(), rsvpStatus, isArchived: false, archivedAt: null,
+      historical: { nested: [1, 2] }, guests: validDocument().guests.map(g => ({ ...g, originalName: "Legacy", unknown: 42 })) };
+    const originalCopy = structuredClone(original);
+    firestoreMocks.transactionGet.mockResolvedValue(snapshot(original));
+    const finalSnapshot = snapshot({ ...original, editOverrideUntil: Timestamp.fromDate(future), updatedAt: new Timestamp(101, 0) }, new Timestamp(101, 0));
+    firestoreMocks.getDocument.mockResolvedValue(finalSnapshot);
+    const result = await updateInvitation(id, { editOverrideUntil: future }, version);
+    expect(firestoreMocks.transactionUpdate).toHaveBeenCalledExactlyOnceWith(firestoreMocks.document.mock.results[0].value, {
+      editOverrideUntil: Timestamp.fromDate(future), updatedAt: FieldValue.serverTimestamp(),
+    });
+    expect(original).toEqual(originalCopy);
+    expect(firestoreMocks.updateDocument).not.toHaveBeenCalled();
+    expect(result).toEqual(mapInvitationSnapshot(finalSnapshot as never));
+    expect(result?.version).not.toBe(version);
+  });
+  it.each([true, false])("revokes with null even when archived=%s", async isArchived => {
+    const data = { ...validDocument(), editOverrideUntil: Timestamp.fromDate(future), isArchived, archivedAt: isArchived ? time : null };
+    firestoreMocks.transactionGet.mockResolvedValue(snapshot(data));
+    const finalSnapshot = snapshot({ ...data, editOverrideUntil: null }, new Timestamp(101, 0));
+    firestoreMocks.getDocument.mockResolvedValue(finalSnapshot);
+    expect(await updateInvitation(id, { editOverrideUntil: null }, version)).toEqual(mapInvitationSnapshot(finalSnapshot as never));
+    expect(firestoreMocks.transactionUpdate.mock.calls[0][1]).toEqual({ editOverrideUntil: null, updatedAt: FieldValue.serverTimestamp() });
+  });
+  it.each([null, new Timestamp(50, 0), Timestamp.fromDate(new Date(now + 1000)), Timestamp.fromDate(new Date(now + 172800000))])("sets, extends or shortens an existing permission %j", async old => {
+    firestoreMocks.transactionGet.mockResolvedValue(snapshot({ ...validDocument(), editOverrideUntil: old }));
+    await updateInvitation(id, { editOverrideUntil: future }, version);
+    expect(firestoreMocks.transactionUpdate.mock.calls[0][1].editOverrideUntil).toEqual(Timestamp.fromDate(future));
+  });
+  it("grants on a legacy document without override", async () => {
+    const { editOverrideUntil: _ignored, ...legacy } = validDocument();
+    firestoreMocks.transactionGet.mockResolvedValue(snapshot(legacy));
+    await updateInvitation(id, { editOverrideUntil: future }, version);
+    expect(firestoreMocks.transactionUpdate).toHaveBeenCalledOnce();
+  });
+  it.each([-1, 0])("rejects past/equal server time (%i ms) without any write", async delta => {
+    await expect(updateInvitation(id, { editOverrideUntil: new Date(now + delta) }, version)).rejects.toThrow(/debe ser futura/);
+    expect(firestoreMocks.transactionUpdate).not.toHaveBeenCalled();
+    expect(firestoreMocks.getDocument).not.toHaveBeenCalled();
+  });
+  it("rejects granting on an archived snapshot", async () => {
+    firestoreMocks.transactionGet.mockResolvedValue(snapshot({ ...validDocument(), isArchived: true, archivedAt: time }));
+    await expect(updateInvitation(id, { editOverrideUntil: future }, version)).rejects.toThrow(/Restaura/);
+    expect(firestoreMocks.transactionUpdate).not.toHaveBeenCalled();
+  });
+  it.each([future, null])("requires a valid version even for service callers (%j)", async editOverrideUntil => {
+    for (const invalid of [undefined, "bad"]) {
+      await expect(updateInvitation(id, { editOverrideUntil }, invalid)).rejects.toThrow(DomainError);
+    }
+    expect(firestoreMocks.runTransaction).not.toHaveBeenCalled();
+    expect(firestoreMocks.updateDocument).not.toHaveBeenCalled();
+  });
+  it.each(["stale", "other invitation", "archived", "RSVP", "past date"])("checks version first: %s", async reason => {
+    const data = { ...validDocument(), isArchived: reason === "archived", archivedAt: reason === "archived" ? time : null,
+      ...(reason === "RSVP" ? { guests: validDocument().guests.map(g => ({ ...g, attending: false })), rsvpStatus: "declined", message: "Changed RSVP" } : {}) };
+    firestoreMocks.transactionGet.mockResolvedValue(snapshot(data, new Timestamp(102, 0)));
+    const expected = reason === "other invitation" ? invitationVersion("invitations/OTHER", time) : version;
+    await expect(updateInvitation(id, { displayName: "Updated", replacementsAllowed: false, editOverrideUntil: reason === "past date" ? new Date(now) : future }, expected)).rejects.toMatchObject({ statusCode: 412, code: "PRECONDITION_FAILED" });
+    expect(firestoreMocks.transactionUpdate).not.toHaveBeenCalled();
+    expect(firestoreMocks.updateDocument).not.toHaveBeenCalled();
+    expect(firestoreMocks.getDocument).not.toHaveBeenCalled();
+  });
+  it("writes a combined body atomically and returns reread version", async () => {
+    const input = { displayName: "Updated family", replacementsAllowed: false, editOverrideUntil: future };
+    const finalSnapshot = snapshot({ ...validDocument(), ...input, editOverrideUntil: Timestamp.fromDate(future) }, new Timestamp(102, 0));
+    firestoreMocks.getDocument.mockResolvedValue(finalSnapshot);
+    const result = await updateInvitation(id, input, version);
+    expect(firestoreMocks.transactionUpdate.mock.calls).toHaveLength(1);
+    expect(firestoreMocks.transactionUpdate.mock.calls[0][1]).toEqual({ ...input, editOverrideUntil: Timestamp.fromDate(future), updatedAt: FieldValue.serverTimestamp() });
+    expect(firestoreMocks.updateDocument).not.toHaveBeenCalled();
+    expect(result).toEqual(mapInvitationSnapshot(finalSnapshot as never));
+  });
+  it.each(["version", "time"])("rechecks %s on retry without committing the second attempt", async reason => {
+    let committed = false;
+    const update = vi.fn();
+    firestoreMocks.runTransaction.mockImplementation(async callback => {
+      await callback({ get: async () => snapshot(), update });
+      update.mockClear(); // contention aborted the first attempt
+      if (reason === "time") vi.mocked(Date.now).mockReturnValue(future.getTime());
+      await callback({ get: async () => snapshot(validDocument(), reason === "version" ? new Timestamp(101, 0) : time), update });
+      committed = true;
+    });
+    const result = updateInvitation(id, { editOverrideUntil: future }, version);
+    if (reason === "version") await expect(result).rejects.toMatchObject({ statusCode: 412 });
+    else await expect(result).rejects.toThrow(/debe ser futura/);
+    expect(committed).toBe(false);
+    expect(update).not.toHaveBeenCalled();
+    expect(firestoreMocks.getDocument).not.toHaveBeenCalled();
+    expect(firestoreMocks.runTransaction).toHaveBeenCalledOnce();
+  });
+  it("returns null for a missing invitation without writing", async () => {
+    firestoreMocks.transactionGet.mockResolvedValue({ exists: false });
+    expect(await updateInvitation(id, { editOverrideUntil: future }, version)).toBeNull();
+    expect(firestoreMocks.transactionUpdate).not.toHaveBeenCalled();
+    expect(firestoreMocks.getDocument).not.toHaveBeenCalled();
+  });
+  it.each(["read", "commit", "reread", "missing reread"])("does not retry after infrastructure failure: %s", async failure => {
+    if (failure === "read") firestoreMocks.transactionGet.mockRejectedValue(new Error("failed"));
+    if (failure === "commit") firestoreMocks.runTransaction.mockImplementation(async callback => { await callback(transaction); throw new Error("failed"); });
+    if (failure === "reread") firestoreMocks.getDocument.mockRejectedValue(new Error("failed"));
+    if (failure === "missing reread") firestoreMocks.getDocument.mockResolvedValue({ exists: false });
+    await expect(updateInvitation(id, { editOverrideUntil: future }, version)).rejects.toThrow();
+    expect(firestoreMocks.runTransaction).toHaveBeenCalledOnce();
+    expect(firestoreMocks.updateDocument).not.toHaveBeenCalled();
+    if (failure === "read") expect(firestoreMocks.transactionUpdate).not.toHaveBeenCalled();
+    else expect(firestoreMocks.transactionUpdate).toHaveBeenCalledOnce();
+    if (failure === "read" || failure === "commit") expect(firestoreMocks.getDocument).not.toHaveBeenCalled();
+    else expect(firestoreMocks.getDocument).toHaveBeenCalledOnce();
   });
 });

@@ -16,9 +16,9 @@ describe("parseUpdateInvitationInput", () => {
     });
   });
 
-  it("converts an ISO editOverrideUntil to Date", () => {
+  it.each(["2026-09-01T12:30:00.000Z", "2026-09-01T07:30:00-05:00"])("converts ISO %s to the same Date", editOverrideUntil => {
     expect(
-      parseUpdateInvitationInput({ editOverrideUntil: "2026-09-01T12:30:00.000Z" }),
+      parseUpdateInvitationInput({ editOverrideUntil }),
     ).toEqual({ editOverrideUntil: new Date("2026-09-01T12:30:00.000Z") });
   });
 
@@ -28,7 +28,7 @@ describe("parseUpdateInvitationInput", () => {
     });
   });
 
-  it.each(["not-a-date", "2026-02-30T12:00:00.000Z"])(
+  it.each(["not-a-date", "2026-02-30T12:00:00.000Z", "2028-03-15T12:30:00", "2028-03-15", "2028-03-15T12:30Z", 123, {}, [], false, undefined])(
     "rejects invalid date %s",
     (editOverrideUntil) => {
       expect(() => parseUpdateInvitationInput({ editOverrideUntil })).toThrow(DomainError);
@@ -37,6 +37,13 @@ describe("parseUpdateInvitationInput", () => {
 
   it("rejects an empty body", () => {
     expect(() => parseUpdateInvitationInput({})).toThrow(/Se requiere al menos un campo/);
+  });
+
+  it("keeps combined input semantics and explicit null presence", () => {
+    const input = parseUpdateInvitationInput({ displayName: "  Familia Pérez  ", replacementsAllowed: false, editOverrideUntil: null });
+    expect(input).toEqual({ displayName: "Familia Pérez", replacementsAllowed: false, editOverrideUntil: null });
+    expect(Object.hasOwn(input, "editOverrideUntil")).toBe(true);
+    expect(Object.hasOwn(parseUpdateInvitationInput({ displayName: "Family" }), "editOverrideUntil")).toBe(false);
   });
 
   it.each(["id", "maxGuests", "guests", "rsvpStatus", "message", "updatedAt", "isArchived", "archivedAt"])(

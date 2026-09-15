@@ -176,6 +176,18 @@ describe("OpenAPI documentation", () => {
     );
   });
 
+  it("documents conditional version and extraordinary permission on the existing PATCH", () => {
+    const operation = openApiDocument.paths["/api/admin/invitations/{id}"].patch;
+    const header = operation.parameters.find(parameter => parameter.name === "X-Invitation-Version");
+    expect(header).toMatchObject({ in: "header", required: false });
+    expect(header?.description).toContain("Obligatorio únicamente cuando el body incluye editOverrideUntil");
+    expect(Object.keys(operation.responses).sort()).toEqual(["200", "400", "401", "403", "404", "412", "500"]);
+    expect(operation.description).toContain("null revoca");
+    expect(operation.description).toContain("archivadas");
+    expect(operation.description).toContain("futura");
+    expect(openApiDocument.components.schemas.UpdateInvitationInput.properties.editOverrideUntil).toMatchObject({ type: "string", format: "date-time", nullable: true });
+  });
+
   it("does not define request bodies for archive or restore", () => {
     expect(
       openApiDocument.paths["/api/admin/invitations/{id}/archive"].post,

@@ -85,7 +85,15 @@ export async function updateInvitationController(
   response: Response,
 ): Promise<void> {
   const input = parseUpdateInvitationInput(request.body);
-  const invitation = await updateInvitation(request.params.id, input);
+  let invitation: VersionedInvitation | null;
+  if (Object.hasOwn(input, "editOverrideUntil")) {
+    const id = parseInvitationId(request.params.id);
+    const values = request.headersDistinct["x-invitation-version"];
+    const version = parseInvitationVersion(values?.length === 1 ? values[0] : values);
+    invitation = await updateInvitation(id, input, version);
+  } else {
+    invitation = await updateInvitation(request.params.id, input);
+  }
   if (!invitation) invitationNotFound();
   response.status(200).json(toHttpInvitation(invitation));
 }

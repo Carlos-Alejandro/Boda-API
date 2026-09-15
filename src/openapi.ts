@@ -163,8 +163,14 @@ export const openApiDocument = {
       patch: {
         tags: ["Invitaciones"],
         summary: "Actualizar los campos editables de la invitación",
+        description: "Cuando el body incluye editOverrideUntil (incluso null), exige un único X-Invitation-Version válido y aplica todos los campos enviados en una transacción. La versión se compara antes de validar el estado actual; si cambió, devuelve 412. No reintentes automáticamente con una versión nueva. Sin editOverrideUntil se conserva el PATCH sin versión obligatoria. La fecha debe ser estrictamente futura según el servidor; null revoca. En archivadas solo se permite revocar el permiso, no concederlo ni modificarlo a una fecha. Devuelve la invitación completa con su nueva versión.",
         security: secured,
-        parameters: [invitationIdParameter],
+        parameters: [
+          invitationIdParameter,
+          { name: "X-Invitation-Version", in: "header", required: false,
+            schema: { type: "string", maxLength: 4096, pattern: "^iv1\\.[A-Za-z0-9_-]+$" },
+            description: "Obligatorio únicamente cuando el body incluye editOverrideUntil, incluso si es null o viene junto con otros campos. Debe enviarse una sola vez. Ausente, malformado o duplicado: 400; versión desactualizada: 412." },
+        ],
         requestBody: {
           required: true,
           content: {
@@ -179,6 +185,7 @@ export const openApiDocument = {
           "401": errorResponse,
           "403": errorResponse,
           "404": errorResponse,
+          "412": { ...errorResponse, description: "PRECONDITION_FAILED: La invitación cambió. Recarga los datos antes de modificar el permiso extraordinario." },
           "500": errorResponse,
         },
       },
@@ -440,6 +447,7 @@ export const openApiDocument = {
             type: "string",
             format: "date-time",
             nullable: true,
+            description: "ISO 8601 con fecha, hora, segundos y zona explícita Z o ±HH:mm; fracción opcional de 1 a 3 dígitos. Debe ser futura según el reloj del servidor, comprobado en cada intento transaccional. null revoca, incluso en archivadas; una fecha no-null no se permite en archivadas. Incluir este campo exige X-Invitation-Version.",
           },
         },
       },

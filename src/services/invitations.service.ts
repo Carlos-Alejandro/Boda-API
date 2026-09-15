@@ -24,7 +24,7 @@ import {
   updateGuestName,
 } from "./invitationModel.service";
 
-import { invitationVersion } from "./invitationVersion.service";
+import { invitationVersion, parseInvitationVersion } from "./invitationVersion.service";
 
 const RSVP_STATUSES = new Set<RsvpStatus>([
   "pending",
@@ -129,7 +129,11 @@ export function mapInvitationDocument(id: string, value: unknown): Invitation {
       data.archivedAt === undefined ? null : data.archivedAt,
       "archivedAt",
     ),
-    editOverrideUntil: mapTimestamp(id, data.editOverrideUntil, "editOverrideUntil"),
+    editOverrideUntil: mapTimestamp(
+      id,
+      data.editOverrideUntil === undefined ? null : data.editOverrideUntil,
+      "editOverrideUntil",
+    ),
     updatedAt: mapTimestamp(id, data.updatedAt, "updatedAt"),
     guests: data.guests.map((guest, index) => mapGuest(id, guest, index)),
   };
@@ -211,26 +215,55 @@ export async function createInvitation(
 export async function updateInvitation(
   id: string,
   input: UpdateInvitationInput,
+  expectedVersion?: string,
 ): Promise<VersionedInvitation | null> {
-  const document = firestore.collection("invitations").doc(id);
-  const existing = await document.get();
-  if (!existing.exists) return null;
+  const updatesOverride = Object.hasOwn(input, "editOverrideUntil");
+  const version = updatesOverride ? parseInvitationVersion(expectedVersion) : undefined;
+  const document = firestore.collection("invitations").doc(updatesOverride ? parseInvitationId(id) : id);
 
-  const changes: Record<string, unknown> = {
-    updatedAt: FieldValue.serverTimestamp(),
-  };
-  if (input.displayName !== undefined) changes.displayName = input.displayName;
-  if (input.replacementsAllowed !== undefined) {
-    changes.replacementsAllowed = input.replacementsAllowed;
-  }
-  if (input.editOverrideUntil !== undefined) {
-    changes.editOverrideUntil =
-      input.editOverrideUntil === null
-        ? null
-        : Timestamp.fromDate(input.editOverrideUntil);
+  function buildChanges(): Record<string, unknown> {
+    const changes: Record<string, unknown> = {
+      updatedAt: FieldValue.serverTimestamp(),
+    };
+    if (input.displayName !== undefined) changes.displayName = input.displayName;
+    if (input.replacementsAllowed !== undefined) {
+      changes.replacementsAllowed = input.replacementsAllowed;
+    }
+    if (input.editOverrideUntil !== undefined) {
+      changes.editOverrideUntil = input.editOverrideUntil === null
+        ? null : Timestamp.fromDate(input.editOverrideUntil);
+    }
+    return changes;
   }
 
-  await document.update(changes);
+  if (updatesOverride) {
+    const exists = await firestore.runTransaction(async (transaction) => {
+      const snapshot = await transaction.get(document);
+      if (!snapshot.exists) return false;
+      const current = mapInvitationSnapshot(snapshot);
+      if (current.version !== version) {
+        throw new HttpError(412, "PRECONDITION_FAILED",
+          "La invitación cambió. Recarga los datos antes de modificar el permiso extraordinario.");
+      }
+      if (input.editOverrideUntil !== null) {
+        if (!(input.editOverrideUntil instanceof Date) ||
+          !Number.isFinite(input.editOverrideUntil.getTime()) ||
+          input.editOverrideUntil.getTime() <= Date.now()) {
+          throw new DomainError("La fecha del permiso extraordinario debe ser futura.");
+        }
+        if (current.isArchived) {
+          throw new DomainError("Restaura la invitación antes de conceder o modificar el permiso extraordinario.");
+        }
+      }
+      transaction.update(document, buildChanges());
+      return true;
+    });
+    if (!exists) return null;
+  } else {
+    const existing = await document.get();
+    if (!existing.exists) return null;
+    await document.update(buildChanges());
+  }
 
   const updated = await document.get();
   if (!updated.exists) throw new Error("Updated invitation could not be read back");
