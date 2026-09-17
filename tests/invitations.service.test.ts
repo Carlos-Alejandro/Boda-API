@@ -363,6 +363,25 @@ describe("createInvitation", () => {
     expect(firestoreMocks.createDocument).toHaveBeenCalledOnce();
   });
 
+  it("recovers a manual create race only on confirmed ALREADY_EXISTS", async () => {
+    idMocks.generateInvitationId.mockReturnValueOnce("ABCDEFGH").mockReturnValueOnce("BCDEFGHJ");
+    firestoreMocks.getDocument.mockResolvedValueOnce({ exists: false }).mockResolvedValueOnce({ exists: false }).mockResolvedValueOnce({
+      exists: true, id: "BCDEFGHJ", ref: { path: "invitations/BCDEFGHJ" }, updateTime: new Timestamp(100, 0), data: validDocument,
+    });
+    firestoreMocks.createDocument.mockRejectedValueOnce(Object.assign(new Error("exists"), { code: 6 }));
+    expect((await createInvitation(input)).id).toBe("BCDEFGHJ");
+    expect(firestoreMocks.createDocument).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(["create", "reread"])("does not retry an uncertain manual %s", async stage => {
+    firestoreMocks.getDocument.mockResolvedValueOnce({ exists: false });
+    if (stage === "create") firestoreMocks.createDocument.mockRejectedValueOnce(Object.assign(new Error("unavailable"), { code: 14 }));
+    else firestoreMocks.getDocument.mockRejectedValueOnce(new Error("read failed"));
+    await expect(createInvitation(input)).rejects.toThrow();
+    expect(firestoreMocks.createDocument).toHaveBeenCalledOnce();
+    expect(idMocks.generateInvitationId).toHaveBeenCalledOnce();
+  });
+
   it("fails safely after too many collisions without writing", async () => {
     idMocks.generateInvitationId.mockReturnValue("COLLIDE2");
     firestoreMocks.getDocument.mockResolvedValue({ exists: true });

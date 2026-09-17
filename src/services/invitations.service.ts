@@ -25,6 +25,13 @@ import {
 } from "./invitationModel.service";
 
 import { invitationVersion, parseInvitationVersion } from "./invitationVersion.service";
+import { parseIdempotencyKey } from "../validation/idempotencyKey";
+import {
+  INVITATION_CREATION_RECEIPTS,
+  invitationCreationFingerprint,
+  invitationCreationReceiptId,
+  parseInvitationCreationReceipt,
+} from "./invitationCreationReceipt.service";
 
 const RSVP_STATUSES = new Set<RsvpStatus>([
   "pending",
@@ -34,6 +41,10 @@ const RSVP_STATUSES = new Set<RsvpStatus>([
 ]);
 const GUEST_TYPES = new Set<GuestType>(["known", "open", "replacement"]);
 const MAX_ID_ATTEMPTS = 10;
+
+function isAlreadyExists(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "code" in error && error.code === 6;
+}
 
 function invalidDocument(id: string, detail: string): never {
   throw new DataIntegrityError(`Invalid invitation document "${id}": ${detail}`);
@@ -197,10 +208,17 @@ export async function createInvitation(
     const existing = await document.get();
     if (existing.exists) continue;
 
-    await document.create({
-      ...invitationData,
-      updatedAt: FieldValue.serverTimestamp(),
-    });
+    try {
+      await document.create({
+        ...invitationData,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    } catch (error) {
+      // gRPC ALREADY_EXISTS confirms this create did not commit. Never retry
+      // ambiguous infrastructure failures or errors from the subsequent reread.
+      if (isAlreadyExists(error)) continue;
+      throw error;
+    }
 
     const created = await document.get();
     if (!created.exists) {
@@ -210,6 +228,64 @@ export async function createInvitation(
   }
 
   throw new Error("Could not generate a unique invitation ID");
+}
+
+export async function createInvitationIdempotently(
+  input: CreateInvitationInput,
+  key: string,
+): Promise<{ invitation: VersionedInvitation; created: boolean }> {
+  const parsedKey = parseIdempotencyKey(key);
+  if (parsedKey === undefined) throw new DomainError("Se requiere Idempotency-Key");
+  const data = createInvitationData(input);
+  const fingerprint = invitationCreationFingerprint(data);
+  const receiptRef = firestore.collection(INVITATION_CREATION_RECEIPTS).doc(invitationCreationReceiptId(parsedKey));
+  const invitations = firestore.collection("invitations");
+
+  let idAttempts = 0;
+  const runCreation = () => firestore.runTransaction(async transaction => {
+    const receiptSnapshot = await transaction.get(receiptRef);
+    if (receiptSnapshot.exists) {
+      const receipt = parseInvitationCreationReceipt(receiptSnapshot.data());
+      if (receipt.fingerprint !== fingerprint) {
+        throw new HttpError(409, "IDEMPOTENCY_CONFLICT",
+          "Esta clave de idempotencia ya se utilizó con otros datos. Usa la clave original solo para reintentar la misma creación.");
+      }
+      const existing = await transaction.get(invitations.doc(receipt.invitationId));
+      if (!existing.exists) throw new DataIntegrityError("Invitation creation receipt references a missing invitation");
+      return { created: false, invitation: mapInvitationSnapshot(existing) } as const;
+    }
+
+    // Every callback retry rereads the same receipt before choosing an ID.
+    // Reading the candidate also lets Firestore detect a competing creation.
+    while (idAttempts < MAX_ID_ATTEMPTS) {
+      idAttempts += 1;
+      const document = invitations.doc(generateInvitationId());
+      if ((await transaction.get(document)).exists) continue;
+      transaction.create(document, { ...data, updatedAt: FieldValue.serverTimestamp() });
+      transaction.create(receiptRef, {
+        fingerprint, invitationId: document.id, createdAt: FieldValue.serverTimestamp(),
+      });
+      return { created: true, document } as const;
+    }
+    throw new Error("Could not generate a unique invitation ID");
+  });
+
+  let result: Awaited<ReturnType<typeof runCreation>>;
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      result = await runCreation();
+      break;
+    } catch (error) {
+      // Unlike ABORTED, ALREADY_EXISTS is not retried by the SDK. A rejected
+      // atomic create is safe to retry, always rereading the original receipt.
+      if (!isAlreadyExists(error) || attempt >= MAX_ID_ATTEMPTS - 1) throw error;
+    }
+  }
+
+  if (!result.created) return result;
+  const created = await result.document.get();
+  if (!created.exists) throw new DataIntegrityError("Created invitation could not be read back");
+  return { created: true, invitation: mapInvitationSnapshot(created) };
 }
 
 export async function updateInvitation(

@@ -176,6 +176,14 @@ describe("OpenAPI documentation", () => {
     );
   });
 
+  it("documents optional creation idempotency without adding endpoints", () => {
+    const operation = openApiDocument.paths["/api/admin/invitations"].post;
+    expect(operation.parameters).toContainEqual(expect.objectContaining({ name: "Idempotency-Key", in: "header", required: false }));
+    expect(Object.keys(operation.responses).sort()).toEqual(["200", "201", "400", "401", "403", "409", "500"]);
+    expect(operation.description).toContain("sin recreación");
+    expect(operation.description).toContain("orden de knownGuests importa");
+  });
+
   it("documents conditional version and extraordinary permission on the existing PATCH", () => {
     const operation = openApiDocument.paths["/api/admin/invitations/{id}"].patch;
     const header = operation.parameters.find(parameter => parameter.name === "X-Invitation-Version");
@@ -202,6 +210,7 @@ describe("OpenAPI documentation", () => {
     expect(schema.properties.error.properties.code.enum).toEqual([
       "VALIDATION_ERROR",
       "PRECONDITION_FAILED",
+      "IDEMPOTENCY_CONFLICT",
       "UNAUTHORIZED",
       "FORBIDDEN",
       "INVITATION_NOT_FOUND",

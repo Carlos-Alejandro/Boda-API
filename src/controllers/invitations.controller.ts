@@ -6,6 +6,7 @@ import {
   archiveInvitation,
   changeCapacity,
   createInvitation,
+  createInvitationIdempotently,
   getInvitationById,
   listInvitations,
   restoreInvitationReplacement,
@@ -22,6 +23,7 @@ import { parseUpdateGuestInput } from "../validation/updateGuestInput";
 import { parseListInvitationsQuery } from "../validation/listInvitationsQuery";
 import { parseInvitationId } from "../validation/invitationId";
 import { parseInvitationVersion } from "../services/invitationVersion.service";
+import { parseIdempotencyKey } from "../validation/idempotencyKey";
 
 function toHttpInvitation(invitation: VersionedInvitation) {
   return {
@@ -76,6 +78,13 @@ export async function createInvitationController(
   response: Response,
 ): Promise<void> {
   const input = parseCreateInvitationInput(request.body);
+  const values = request.headersDistinct?.["idempotency-key"];
+  const key = parseIdempotencyKey(values?.length === 1 ? values[0] : values);
+  if (key !== undefined) {
+    const result = await createInvitationIdempotently(input, key);
+    response.status(result.created ? 201 : 200).json(toHttpInvitation(result.invitation));
+    return;
+  }
   const invitation = await createInvitation(input);
   response.status(201).json(toHttpInvitation(invitation));
 }

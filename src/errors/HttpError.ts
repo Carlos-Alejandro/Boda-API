@@ -14,6 +14,10 @@ const ADDITIONAL_PRECONDITION_MESSAGES = new Set([
 ]);
 
 const PUBLIC_HTTP_ERRORS = {
+  IDEMPOTENCY_CONFLICT: {
+    statusCode: 409,
+    message: "Esta clave de idempotencia ya se utilizó con otros datos. Usa la clave original solo para reintentar la misma creación.",
+  },
   PRECONDITION_FAILED: {
     statusCode: 412,
     message: "La invitación cambió. Recarga los datos antes de eliminar un invitado.",

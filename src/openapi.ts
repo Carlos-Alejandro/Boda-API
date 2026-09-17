@@ -128,7 +128,13 @@ export const openApiDocument = {
       post: {
         tags: ["Invitaciones"],
         summary: "Crear una invitación",
+        description: "Sin Idempotency-Key conserva la creación manual (201). Con una clave nueva crea atómicamente la invitación y un recibo privado (201). Repetir la misma clave con el mismo input normalizado recupera la invitación actual y su versión (200), sin crear otra. El orden de knownGuests importa. Misma clave con otros datos: 409. Los recibos no caducan automáticamente; una referencia ausente o corrupta devuelve 500, sin recreación. Ante respuesta perdida, reintenta con la misma clave y los mismos datos. Las claves distinguen mayúsculas y se comparten entre administradores para esta operación.",
         security: secured,
+        parameters: [{
+          name: "Idempotency-Key", in: "header", required: false,
+          schema: { type: "string", minLength: 1, maxLength: 200, pattern: "^[A-Za-z0-9._:-]{1,200}$" },
+          description: "Opcional. Un único valor no vacío, de 1 a 200 caracteres ASCII: letras, números, punto, guion, guion bajo o dos puntos. Se almacena su hash, no la clave cruda. Valores duplicados o inválidos devuelven 400.",
+        }],
         requestBody: {
           required: true,
           content: {
@@ -139,9 +145,11 @@ export const openApiDocument = {
         },
         responses: {
           "201": invitationResponse,
+          "200": invitationResponse,
           "400": errorResponse,
           "401": errorResponse,
           "403": errorResponse,
+          "409": { ...errorResponse, description: "IDEMPOTENCY_CONFLICT: clave reutilizada con datos diferentes." },
           "500": errorResponse,
         },
       },
@@ -487,6 +495,7 @@ export const openApiDocument = {
                 enum: [
                   "VALIDATION_ERROR",
                   "PRECONDITION_FAILED",
+                  "IDEMPOTENCY_CONFLICT",
                   "UNAUTHORIZED",
                   "FORBIDDEN",
                   "INVITATION_NOT_FOUND",
