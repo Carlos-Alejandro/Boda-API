@@ -1,7 +1,9 @@
 import { DomainError } from "../errors/DomainError";
 import type { ListInvitationFilters, RsvpStatus } from "../types/invitation";
 
-const ALLOWED_FIELDS = new Set(["search", "rsvpStatus", "archived"]);
+const ALLOWED_FIELDS = new Set(["search", "rsvpStatus", "archived", "page", "pageSize"]);
+export const DEFAULT_PAGE_SIZE = 15;
+export const MAX_PAGE_SIZE = 100;
 const RSVP_STATUSES = new Set<RsvpStatus>([
   "pending",
   "confirmed",
@@ -44,6 +46,28 @@ export function parseListInvitationsQuery(query: unknown): ListInvitationFilters
       throw new DomainError('archived debe ser "true" o "false"');
     }
     filters.archived = query.archived === "true";
+  }
+
+  if (Object.hasOwn(query, "page")) {
+    if (typeof query.page !== "string" || !/^\d+$/.test(query.page)) {
+      throw new DomainError("page debe ser un entero positivo");
+    }
+    const page = Number(query.page);
+    if (!Number.isSafeInteger(page) || page < 1) {
+      throw new DomainError("page debe ser un entero positivo");
+    }
+    filters.page = page;
+  }
+
+  if (Object.hasOwn(query, "pageSize")) {
+    if (typeof query.pageSize !== "string" || !/^\d+$/.test(query.pageSize)) {
+      throw new DomainError(`pageSize debe ser un entero entre 1 y ${MAX_PAGE_SIZE}`);
+    }
+    const pageSize = Number(query.pageSize);
+    if (!Number.isSafeInteger(pageSize) || pageSize < 1 || pageSize > MAX_PAGE_SIZE) {
+      throw new DomainError(`pageSize debe ser un entero entre 1 y ${MAX_PAGE_SIZE}`);
+    }
+    filters.pageSize = pageSize;
   }
 
   return filters;

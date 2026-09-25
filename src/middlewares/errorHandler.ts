@@ -26,6 +26,18 @@ export const errorHandler: ErrorRequestHandler = (
     return;
   }
 
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "status" in error &&
+    error.status === 413 &&
+    "type" in error &&
+    error.type === "entity.too.large"
+  ) {
+    sendError(response, 413, "VALIDATION_ERROR", "El cuerpo de la solicitud es demasiado grande");
+    return;
+  }
+
   if (error instanceof HttpError) {
     const publicError = resolvePublicHttpError(error);
     if (publicError) {

@@ -72,8 +72,8 @@ describe("invitations controllers", () => {
   });
 
   it("returns a list with ids and ISO dates", async () => {
-    serviceMocks.listInvitations.mockResolvedValue([
-      {
+    serviceMocks.listInvitations.mockResolvedValue({
+      items: [{
         id: "KM8P2XQ7",
         displayName: "Julia & Jordi",
         maxGuests: 1,
@@ -83,8 +83,12 @@ describe("invitations controllers", () => {
         updatedAt: new Date("2026-08-01T10:00:00.000Z"),
         editOverrideUntil: null,
         guests: [{ name: "Julia", shortName: "Julia", type: "known", attending: null }],
-      },
-    ]);
+      }],
+      total: 1,
+      page: 1,
+      pageSize: 15,
+      totalPages: 1,
+    });
     const response = responseMock();
 
     await listInvitationsController(
@@ -102,12 +106,15 @@ describe("invitations controllers", () => {
         }),
       ],
       total: 1,
+      page: 1,
+      pageSize: 15,
+      totalPages: 1,
     });
     expect(serviceMocks.listInvitations).toHaveBeenCalledWith({});
   });
 
   it("parses and forwards list filters without changing the response format", async () => {
-    serviceMocks.listInvitations.mockResolvedValue([]);
+    serviceMocks.listInvitations.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 15, totalPages: 0 });
     const response = responseMock();
 
     await listInvitationsController(
@@ -127,7 +134,7 @@ describe("invitations controllers", () => {
       rsvpStatus: "confirmed",
       archived: false,
     });
-    expect(response.json).toHaveBeenCalledWith({ items: [], total: 0 });
+    expect(response.json).toHaveBeenCalledWith({ items: [], total: 0, page: 1, pageSize: 15, totalPages: 0 });
   });
 
   it("returns 400 for invalid or repeated list query parameters", async () => {

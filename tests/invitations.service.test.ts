@@ -7,6 +7,10 @@ const firestoreMocks = vi.hoisted(() => ({
   document: vi.fn(),
   getDocument: vi.fn(),
   listDocuments: vi.fn(),
+  countDocuments: vi.fn(),
+  queryWhere: vi.fn(),
+  queryOffset: vi.fn(),
+  queryLimit: vi.fn(),
   runTransaction: vi.fn(),
   transactionGet: vi.fn(),
   transactionUpdate: vi.fn(),
@@ -17,10 +21,49 @@ const idMocks = vi.hoisted(() => ({ generateInvitationId: vi.fn() }));
 
 vi.mock("../src/config/firebaseAdmin", () => ({
   firestore: {
-    collection: vi.fn(() => ({
-      get: firestoreMocks.listDocuments,
-      doc: firestoreMocks.document,
-    })),
+    collection: vi.fn(() => {
+      const filters: Array<[string, string, unknown]> = [];
+      let offset = 0;
+      let limit = Number.POSITIVE_INFINITY;
+      const filtered = async () => {
+        const snapshot = await firestoreMocks.listDocuments();
+        const docs = snapshot.docs.filter((document: { id: string; data: () => Record<string, unknown> }) => {
+          const data = document.data();
+          return filters.every(([field, operator, value]) => {
+            if (operator === "==") return data[field] === value || (field === "isArchived" && value === false && data[field] === undefined);
+            if (operator === "array-contains") {
+              const haystack = [document.id, data.displayName, ...((data.guests as Array<{ name: string }>) ?? []).map(guest => guest.name)]
+                .join(" ").normalize("NFD").replace(/\p{M}+/gu, "").toLowerCase()
+                .replace(/[^\p{L}\p{N}]+/gu, " ").trim().replace(/\s+/g, " ");
+              return haystack.includes(String(value));
+            }
+            return false;
+          });
+        });
+        return { docs };
+      };
+      const query = {
+        doc: firestoreMocks.document,
+        get: async () => {
+          const snapshot = await filtered();
+          return { docs: snapshot.docs.slice(offset, offset + limit) };
+        },
+        where: vi.fn((field, operator, value) => {
+          firestoreMocks.queryWhere(field, operator, value);
+          filters.push([field, operator, value]);
+          return query;
+        }),
+        count: () => ({
+          get: async () => {
+            const snapshot = await filtered();
+            return { data: () => ({ count: snapshot.docs.length }) };
+          },
+        }),
+        offset: vi.fn((value) => { firestoreMocks.queryOffset(value); offset = value; return query; }),
+        limit: vi.fn((value) => { firestoreMocks.queryLimit(value); limit = value; return query; }),
+      };
+      return query;
+    }),
     runTransaction: firestoreMocks.runTransaction,
   },
 }));
@@ -165,9 +208,12 @@ describe("Firestore reads", () => {
       docs: [{ id: "KM8P2XQ7", ref: { path: "invitations/KM8P2XQ7" }, updateTime: new Timestamp(100, 123456000), data: () => validDocument() }],
     });
 
-    await expect(listInvitations()).resolves.toEqual([
-      expect.objectContaining({ id: "KM8P2XQ7" }),
-    ]);
+    await expect(listInvitations()).resolves.toMatchObject({
+      items: [expect.objectContaining({ id: "KM8P2XQ7" })],
+      total: 1,
+      page: 1,
+      totalPages: 1,
+    });
   });
 
   function listDocument(
@@ -205,24 +251,25 @@ describe("Firestore reads", () => {
   it("returns every mapped invitation without filters", async () => {
     mockInvitationList();
     const result = await listInvitations();
-    expect(result.map(({ id }) => id)).toEqual([
+    expect(result.items.map(({ id }) => id)).toEqual([
       "JW2NRV5C",
       "LEGACY22",
       "ARCHIVE1",
       "ACTIVE44",
     ]);
+    expect(firestoreMocks.countDocuments).not.toHaveBeenCalled();
   });
 
   it.each([
-    ["Julia & Jordi", ["JW2NRV5C"]],
-    ["julia", ["JW2NRV5C", "ARCHIVE1"]],
-    ["JuLiA", ["JW2NRV5C", "ARCHIVE1"]],
-    ["  Julia & Jordi  ", ["JW2NRV5C"]],
-    ["jw2", ["JW2NRV5C"]],
-  ] as const)("filters search=%s by id or displayName", async (search, ids) => {
+    ["Julia & Jordi", "julia jordi"],
+    ["julia", "julia"],
+    ["JuLiA", "julia"],
+    ["  Julia & Jordi  ", "julia jordi"],
+    ["jw2", "jw2"],
+  ] as const)("queries normalized search=%s through searchPrefixes", async (search, normalized) => {
     mockInvitationList();
-    const result = await listInvitations({ search });
-    expect(result.map(({ id }) => id)).toEqual(ids);
+    await listInvitations({ search });
+    expect(firestoreMocks.queryWhere).toHaveBeenCalledWith("searchPrefixes", "array-contains", normalized);
   });
 
   it.each([
@@ -233,19 +280,19 @@ describe("Firestore reads", () => {
   ] as const)("filters rsvpStatus=%s", async (rsvpStatus, ids) => {
     mockInvitationList();
     const result = await listInvitations({ rsvpStatus });
-    expect(result.map(({ id }) => id)).toEqual(ids);
+    expect(result.items.map(({ id }) => id)).toEqual(ids);
   });
 
   it("filters archived=true and excludes legacy documents", async () => {
     mockInvitationList();
     const result = await listInvitations({ archived: true });
-    expect(result.map(({ id }) => id)).toEqual(["ARCHIVE1"]);
+    expect(result.items.map(({ id }) => id)).toEqual(["ARCHIVE1"]);
   });
 
   it("filters archived=false and includes legacy documents", async () => {
     mockInvitationList();
     const result = await listInvitations({ archived: false });
-    expect(result.map(({ id }) => id)).toEqual([
+    expect(result.items.map(({ id }) => id)).toEqual([
       "JW2NRV5C",
       "LEGACY22",
       "ACTIVE44",
@@ -267,7 +314,7 @@ describe("Firestore reads", () => {
   ] as const)("combines filters with AND: %j", async (filters, ids) => {
     mockInvitationList();
     const result = await listInvitations(filters);
-    expect(result.map(({ id }) => id)).toEqual(ids);
+    expect(result.items.map(({ id }) => id)).toEqual(ids);
   });
 
   it("maps every document before filtering", async () => {
@@ -290,6 +337,38 @@ describe("Firestore reads", () => {
     expect(firestoreMocks.updateDocument).not.toHaveBeenCalled();
     expect(firestoreMocks.transactionUpdate).not.toHaveBeenCalled();
     expect(firestoreMocks.runTransaction).not.toHaveBeenCalled();
+  });
+
+  it("returns the second page for 16 results with one shared filtered total", async () => {
+    firestoreMocks.listDocuments.mockResolvedValue({
+      docs: Array.from({ length: 16 }, (_, index) => listDocument(`PAGE${String(index + 1).padStart(2, "0")}`, `Familia ${index + 1}`, "pending", false)),
+    });
+    const result = await listInvitations({ page: 2 });
+    expect(result).toMatchObject({ total: 16, page: 2, pageSize: 15, totalPages: 2 });
+    expect(result.items.map(({ id }) => id)).toEqual(["PAGE16"]);
+    expect(firestoreMocks.queryOffset).toHaveBeenCalledWith(15);
+    expect(firestoreMocks.queryLimit).toHaveBeenCalledWith(15);
+  });
+
+  it("uses a valid custom page size instead of the default", async () => {
+    firestoreMocks.listDocuments.mockResolvedValue({
+      docs: Array.from({ length: 25 }, (_, index) => listDocument(`CUSTOM${String(index + 1).padStart(2, "0")}`, `Familia ${index + 1}`, "pending", false)),
+    });
+    const result = await listInvitations({ page: 2, pageSize: 10 });
+    expect(result).toMatchObject({ total: 25, page: 2, pageSize: 10, totalPages: 3 });
+    expect(result.items).toHaveLength(10);
+    expect(firestoreMocks.queryOffset).toHaveBeenCalledWith(10);
+    expect(firestoreMocks.queryLimit).toHaveBeenCalledWith(10);
+  });
+
+  it("applies search, RSVP and archive filters to the same Firestore query", async () => {
+    mockInvitationList();
+    await listInvitations({ search: "Júlia", rsvpStatus: "confirmed", archived: false, page: 1, pageSize: 15 });
+    expect(firestoreMocks.queryWhere.mock.calls).toEqual(expect.arrayContaining([
+      ["searchPrefixes", "array-contains", "julia"],
+      ["rsvpStatus", "==", "confirmed"],
+      ["isArchived", "==", false],
+    ]));
   });
 });
 
@@ -403,6 +482,10 @@ describe("updateInvitation", () => {
       update: firestoreMocks.updateDocument,
     });
     firestoreMocks.updateDocument.mockResolvedValue(undefined);
+    firestoreMocks.runTransaction.mockImplementation(async (callback) => callback({
+      get: firestoreMocks.transactionGet,
+      update: firestoreMocks.transactionUpdate,
+    }));
   });
 
   function mockExistingAndUpdated(overrides: Record<string, unknown> = {}) {
@@ -415,17 +498,25 @@ describe("updateInvitation", () => {
   }
 
   it("updates displayName without guests or maxGuests", async () => {
-    mockExistingAndUpdated({ displayName: "Familia Actualizada" });
+    firestoreMocks.transactionGet.mockResolvedValueOnce({
+      exists: true,
+      id: "KM8P2XQ7", ref: { path: "invitations/KM8P2XQ7" }, updateTime: new Timestamp(99, 0), data: () => validDocument(),
+    });
+    firestoreMocks.getDocument.mockResolvedValueOnce({
+      exists: true,
+      id: "KM8P2XQ7", ref: { path: "invitations/KM8P2XQ7" }, updateTime: new Timestamp(100, 123456000), data: () => ({ ...validDocument(), displayName: "Familia Actualizada" }),
+    });
     const result = await updateInvitation("KM8P2XQ7", {
       displayName: "Familia Actualizada",
     });
 
     expect(result?.displayName).toBe("Familia Actualizada");
-    expect(firestoreMocks.updateDocument).toHaveBeenCalledWith({
+    expect(firestoreMocks.transactionUpdate).toHaveBeenCalledWith(expect.anything(), {
       displayName: "Familia Actualizada",
+      searchPrefixes: expect.any(Array),
       updatedAt: expect.anything(),
     });
-    const changes = firestoreMocks.updateDocument.mock.calls[0][0];
+    const changes = firestoreMocks.transactionUpdate.mock.calls[0][1];
     expect(changes).not.toHaveProperty("guests");
     expect(changes).not.toHaveProperty("maxGuests");
   });
@@ -448,7 +539,7 @@ describe("updateInvitation", () => {
   });
 
   it("returns null without updating when the invitation does not exist", async () => {
-    firestoreMocks.getDocument.mockResolvedValueOnce({ exists: false });
+    firestoreMocks.transactionGet.mockResolvedValueOnce({ exists: false });
     await expect(
       updateInvitation("missing", { displayName: "Familia" }),
     ).resolves.toBeNull();
@@ -534,6 +625,7 @@ describe("changeCapacity", () => {
       {
       guests: expectedGuests,
       maxGuests: 2,
+      searchPrefixes: expect.any(Array),
       updatedAt: expect.anything(),
       },
     );
@@ -558,6 +650,7 @@ describe("changeCapacity", () => {
     expect(Object.keys(firestoreMocks.transactionUpdate.mock.calls[0][1]).sort()).toEqual([
       "guests",
       "maxGuests",
+      "searchPrefixes",
       "updatedAt",
     ]);
     expect(result).toMatchObject(preserved);
@@ -751,11 +844,13 @@ describe("restoreInvitationReplacement", () => {
     expect(Object.keys(firestoreMocks.transactionUpdate.mock.calls[0][1]).sort()).toEqual([
       "guests",
       "rsvpStatus",
+      "searchPrefixes",
       "updatedAt",
     ]);
     expect(firestoreMocks.transactionUpdate.mock.calls[0][1]).toEqual({
       guests: updatedGuests,
       rsvpStatus: "pending",
+      searchPrefixes: expect.any(Array),
       updatedAt: expect.anything(),
     });
   });
@@ -916,7 +1011,7 @@ describe("removeInvitationGuest transaction", () => {
     firestoreMocks.getDocument.mockResolvedValue(finalSnapshot);
     const result = await removeInvitationGuest("KM8P2XQ7", 1, version());
     const write = firestoreMocks.transactionUpdate.mock.calls[0][1];
-    expect(write).toEqual({ guests: [remaining], maxGuests: 1, updatedAt: FieldValue.serverTimestamp() });
+    expect(write).toEqual({ guests: [remaining], maxGuests: 1, searchPrefixes: expect.any(Array), updatedAt: FieldValue.serverTimestamp() });
     expect(write.guests[0]).toBe(remaining);
     expect(write).not.toHaveProperty("version");
     expect(result).toMatchObject({ isArchived: true, rsvpStatus: "confirmed", replacementsAllowed: true, version: version(finalSnapshot) });
@@ -982,7 +1077,7 @@ describe("removeInvitationGuest transaction", () => {
     firestoreMocks.getDocument.mockResolvedValue(first);
     firestoreMocks.listDocuments.mockResolvedValue({ docs: [first, second] });
     expect((await getInvitationById(first.id))?.version).toBe(version(first));
-    expect((await listInvitations()).map(item => item.version)).toEqual([version(first), version(second)]);
+    expect((await listInvitations()).items.map(item => item.version)).toEqual([version(first), version(second)]);
   });
   it.each([
     ["capacity", () => changeCapacity("KM8P2XQ7", 2)],
@@ -1057,7 +1152,7 @@ describe("updateInvitationGuest transaction", () => {
     firestoreMocks.getDocument.mockResolvedValue(finalSnapshot);
     const result = await updateInvitationGuest("KM8P2XQ7", 0, "  José   Carlos Martínez  ", version());
     const write = firestoreMocks.transactionUpdate.mock.calls[0][1];
-    expect(write).toEqual({ guests: [updatedGuest, other], updatedAt: FieldValue.serverTimestamp() });
+    expect(write).toEqual({ guests: [updatedGuest, other], searchPrefixes: expect.any(Array), updatedAt: FieldValue.serverTimestamp() });
     expect(write.guests[1]).toBe(other);
     expect(edited.name).toBe("Carlos Martínez");
     expect(result).toEqual(mapInvitationSnapshot(finalSnapshot as never));
@@ -1067,7 +1162,7 @@ describe("updateInvitationGuest transaction", () => {
     const guest = { name: "Mariana Prueva", shortName: "Mariana", type: "replacement", attending: true, originalName: "Cassandra Us Hernandez" };
     firestoreMocks.transactionGet.mockResolvedValue(snapshot({ ...validDocument(), guests: [guest, validDocument().guests[1]] }));
     await updateInvitationGuest("KM8P2XQ7", 0, "Mariana Prueba", version());
-    expect(firestoreMocks.transactionUpdate.mock.calls[0][1]).toEqual({ guests: [{ ...guest, name: "Mariana Prueba" }, validDocument().guests[1]], updatedAt: FieldValue.serverTimestamp() });
+    expect(firestoreMocks.transactionUpdate.mock.calls[0][1]).toEqual({ guests: [{ ...guest, name: "Mariana Prueba" }, validDocument().guests[1]], searchPrefixes: expect.any(Array), updatedAt: FieldValue.serverTimestamp() });
   });
   it.each(["", "   "])("rejects empty target name %j without writing", async name => {
     await expect(updateInvitationGuest("KM8P2XQ7", 0, name, version())).rejects.toThrow(DomainError);
@@ -1247,7 +1342,7 @@ describe("updateInvitation extraordinary permission transaction", () => {
     firestoreMocks.getDocument.mockResolvedValue(finalSnapshot);
     const result = await updateInvitation(id, input, version);
     expect(firestoreMocks.transactionUpdate.mock.calls).toHaveLength(1);
-    expect(firestoreMocks.transactionUpdate.mock.calls[0][1]).toEqual({ ...input, editOverrideUntil: Timestamp.fromDate(future), updatedAt: FieldValue.serverTimestamp() });
+    expect(firestoreMocks.transactionUpdate.mock.calls[0][1]).toEqual({ ...input, editOverrideUntil: Timestamp.fromDate(future), searchPrefixes: expect.any(Array), updatedAt: FieldValue.serverTimestamp() });
     expect(firestoreMocks.updateDocument).not.toHaveBeenCalled();
     expect(result).toEqual(mapInvitationSnapshot(finalSnapshot as never));
   });

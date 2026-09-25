@@ -175,7 +175,8 @@ describe("PATCH extraordinary RSVP permission HTTP", () => {
     expect(mocks.transactionUpdate).toHaveBeenCalledOnce();
     expect(mocks.transactionUpdate.mock.calls[0][1]).toEqual({
       editOverrideUntil: Timestamp.fromDate(new Date(future)), displayName: "Familia Actualizada",
-      replacementsAllowed: false, updatedAt: FieldValue.serverTimestamp(),
+      replacementsAllowed: false, searchPrefixes: expect.arrayContaining(["familia actualizada", "ana"]),
+      updatedAt: FieldValue.serverTimestamp(),
     });
     expect(mocks.update).not.toHaveBeenCalled();
   });
@@ -195,8 +196,15 @@ describe("PATCH extraordinary RSVP permission HTTP", () => {
     const response = await patch(body, { Authorization: "Bearer valid" });
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ ...body, version: nextVersion });
-    expect(mocks.runTransaction).not.toHaveBeenCalled();
-    expect(mocks.update).toHaveBeenCalledOnce();
+    if (Object.hasOwn(body, "displayName")) {
+      expect(mocks.runTransaction).toHaveBeenCalledOnce();
+      expect(mocks.transactionUpdate).toHaveBeenCalledOnce();
+      expect(mocks.transactionUpdate.mock.calls[0][1]).toHaveProperty("searchPrefixes");
+      expect(mocks.update).not.toHaveBeenCalled();
+    } else {
+      expect(mocks.runTransaction).not.toHaveBeenCalled();
+      expect(mocks.update).toHaveBeenCalledOnce();
+    }
   });
   it.each(["guests", "rsvpStatus", "message", "maxGuests", "isArchived", "archivedAt", "updatedAt"])("rejects forbidden combined field %s", async field => {
     await expectError(await patch({ editOverrideUntil: future, [field]: "forced" }), 400, "VALIDATION_ERROR");

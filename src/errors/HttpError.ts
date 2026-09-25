@@ -14,6 +14,14 @@ const ADDITIONAL_PRECONDITION_MESSAGES = new Set([
 ]);
 
 const PUBLIC_HTTP_ERRORS = {
+  RSVP_CONFLICT: {
+    statusCode: 409,
+    message: "La invitación cambió. Actualiza la información antes de volver a guardar.",
+  },
+  RSVP_UNAVAILABLE: {
+    statusCode: 409,
+    message: "La invitación no permite guardar una respuesta en este momento.",
+  },
   IDEMPOTENCY_CONFLICT: {
     statusCode: 409,
     message: "Esta clave de idempotencia ya se utilizó con otros datos. Usa la clave original solo para reintentar la misma creación.",

@@ -31,6 +31,24 @@ export interface ListInvitationFilters {
   search?: string;
   rsvpStatus?: RsvpStatus;
   archived?: boolean;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface InvitationListResult {
+  items: VersionedInvitation[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
+export interface PublicRsvpInput {
+  expectedState: string;
+  responses: Array<boolean | null>;
+  replacementNames: string[];
+  openGuestNames: string[];
+  message: string;
 }
 
 export interface CreateInvitationInput {

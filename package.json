@@ -8,6 +8,7 @@
     "build": "tsc",
     "test": "vitest run",
     "test:firestore-read": "tsx scripts/testFirestoreRead.ts",
+    "backfill:invitation-search": "tsx scripts/backfillInvitationSearch.ts",
     "start": "node dist/server.js"
   },
   "keywords": [],

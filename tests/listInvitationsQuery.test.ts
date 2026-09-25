@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import { DomainError } from "../src/errors/DomainError";
-import { parseListInvitationsQuery } from "../src/validation/listInvitationsQuery";
+import {
+  DEFAULT_PAGE_SIZE,
+  MAX_PAGE_SIZE,
+  parseListInvitationsQuery,
+} from "../src/validation/listInvitationsQuery";
 
 describe("parseListInvitationsQuery", () => {
   it("accepts an empty query", () => {
@@ -16,6 +20,24 @@ describe("parseListInvitationsQuery", () => {
 
   it("treats an empty trimmed search as absent", () => {
     expect(parseListInvitationsQuery({ search: "   " })).toEqual({});
+  });
+
+  it("keeps the current pagination defaults", () => {
+    expect(DEFAULT_PAGE_SIZE).toBe(15);
+    expect(MAX_PAGE_SIZE).toBe(100);
+    expect(parseListInvitationsQuery({ page: "2" })).toEqual({ page: 2 });
+  });
+
+  it.each(["0", "-1", "1.5", "x"])("rejects invalid page=%s", (page) => {
+    expect(() => parseListInvitationsQuery({ page })).toThrow(DomainError);
+  });
+
+  it.each(["10", "15", "25", "100"])("accepts pageSize=%s within the supported range", (pageSize) => {
+    expect(parseListInvitationsQuery({ pageSize })).toEqual({ pageSize: Number(pageSize) });
+  });
+
+  it.each(["0", "-1", "101", "1.5", "x", "", "1e2"])("rejects invalid pageSize=%s", (pageSize) => {
+    expect(() => parseListInvitationsQuery({ pageSize })).toThrow(DomainError);
   });
 
   it.each(["pending", "confirmed", "partial", "declined"])(

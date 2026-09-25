@@ -57,10 +57,10 @@ export async function listInvitationsController(
   response: Response,
 ): Promise<void> {
   const filters = parseListInvitationsQuery(request.query);
-  const invitations = await listInvitations(filters);
+  const result = await listInvitations(filters);
   response.status(200).json({
-    items: invitations.map(toHttpInvitation),
-    total: invitations.length,
+    ...result,
+    items: result.items.map(toHttpInvitation),
   });
 }
 

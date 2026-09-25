@@ -7,7 +7,7 @@ import { corsMiddleware } from "./middlewares/cors";
 const app = express();
 
 app.use(corsMiddleware);
-app.use(express.json());
+app.use(express.json({ limit: "100kb" }));
 app.use("/api", apiRoutes);
 app.use(routeNotFound);
 app.use(errorHandler);

@@ -53,6 +53,7 @@ describe("OpenAPI documentation", () => {
         "/api/admin/invitations/{id}/guests/{guestIndex}",
         "/api/admin/invitations/{id}/archive",
         "/api/admin/invitations/{id}/restore",
+        "/api/public/invitations/{id}/rsvp",
       ].sort(),
     );
   });
@@ -74,6 +75,7 @@ describe("OpenAPI documentation", () => {
     expect(openApiDocument.paths["/api/health"].get).not.toHaveProperty(
       "security",
     );
+    expect(openApiDocument.paths["/api/public/invitations/{id}/rsvp"].post).not.toHaveProperty("security");
   });
 
   it("defines the Firebase bearer scheme", () => {
@@ -130,11 +132,19 @@ describe("OpenAPI documentation", () => {
       "search",
       "rsvpStatus",
       "archived",
+      "page",
+      "pageSize",
     ]);
     expect(parameters[1].schema).toMatchObject({
       enum: ["pending", "confirmed", "partial", "declined"],
     });
     expect(parameters[2].schema).toMatchObject({ type: "boolean" });
+    expect(parameters[4].schema).toMatchObject({
+      type: "integer",
+      minimum: 1,
+      maximum: 100,
+      default: 15,
+    });
   });
 
   it("documents only client-controlled creation fields", () => {
@@ -209,6 +219,8 @@ describe("OpenAPI documentation", () => {
     const schema = openApiDocument.components.schemas.ErrorResponse;
     expect(schema.properties.error.properties.code.enum).toEqual([
       "VALIDATION_ERROR",
+      "RSVP_CONFLICT",
+      "RSVP_UNAVAILABLE",
       "PRECONDITION_FAILED",
       "IDEMPOTENCY_CONFLICT",
       "UNAUTHORIZED",

@@ -47,6 +47,23 @@ describe("HTTP error middleware", () => {
     });
   });
 
+  it("maps an oversized JSON body to a safe uniform 413", () => {
+    const response = responseMock();
+    errorHandler(
+      Object.assign(new Error("request entity too large"), {
+        status: 413,
+        type: "entity.too.large",
+      }),
+      {} as Request,
+      response,
+      vi.fn() as NextFunction,
+    );
+    expect(response.status).toHaveBeenCalledWith(413);
+    expect(response.json).toHaveBeenCalledWith({
+      error: { code: "VALIDATION_ERROR", message: "El cuerpo de la solicitud es demasiado grande" },
+    });
+  });
+
   it("maps known HTTP errors without changing their status", () => {
     const response = responseMock();
     errorHandler(

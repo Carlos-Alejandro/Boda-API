@@ -35,7 +35,9 @@ beforeEach(() => {
   vi.resetAllMocks();
   mocks.verifyIdToken.mockResolvedValue({ uid: "admin" });
   for (const [name, mock] of Object.entries(mocks)) {
-    if (name !== "verifyIdToken") mock.mockResolvedValue(name === "listInvitations" ? [invitation] : invitation);
+    if (name !== "verifyIdToken") mock.mockResolvedValue(name === "listInvitations"
+      ? { items: [invitation], total: 1, page: 1, pageSize: 1, totalPages: 1 }
+      : invitation);
   }
 });
 const remove = (headers: Record<string, string> = { Authorization: "Bearer valid", "X-Invitation-Version": version }, path = basePath + "/legacy-id/guests/0/remove") => fetch(base + path, { method: "POST", headers });

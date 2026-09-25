@@ -1,4 +1,4 @@
-import { FieldValue, Timestamp, type DocumentSnapshot } from "firebase-admin/firestore";
+import { FieldValue, Timestamp, type DocumentSnapshot, type Query } from "firebase-admin/firestore";
 
 import { firestore } from "../config/firebaseAdmin";
 import { DomainError } from "../errors/DomainError";
@@ -10,6 +10,7 @@ import type {
   Guest,
   GuestType,
   Invitation,
+  InvitationListResult,
   ListInvitationFilters,
   RsvpStatus,
   UpdateInvitationInput,
@@ -32,6 +33,11 @@ import {
   invitationCreationReceiptId,
   parseInvitationCreationReceipt,
 } from "./invitationCreationReceipt.service";
+import {
+  buildInvitationSearchPrefixes,
+  normalizeInvitationSearch,
+} from "./invitationSearch.service";
+import { DEFAULT_PAGE_SIZE } from "../validation/listInvitationsQuery";
 
 const RSVP_STATUSES = new Set<RsvpStatus>([
   "pending",
@@ -159,35 +165,44 @@ export function mapInvitationSnapshot(snapshot: DocumentSnapshot): VersionedInvi
 
 export async function listInvitations(
   filters: ListInvitationFilters = {},
-): Promise<VersionedInvitation[]> {
-  const snapshot = await firestore.collection("invitations").get();
-  const invitations = snapshot.docs.map((document) =>
-    mapInvitationSnapshot(document),
-  );
-  const normalizedSearch = filters.search?.trim().toLowerCase();
+): Promise<InvitationListResult> {
+  const paginated = filters.page !== undefined || filters.pageSize !== undefined;
+  const pageSize = filters.pageSize ?? DEFAULT_PAGE_SIZE;
+  const requestedPage = filters.page ?? 1;
+  let query: Query = firestore.collection("invitations");
+  const normalizedSearch = filters.search === undefined
+    ? ""
+    : normalizeInvitationSearch(filters.search);
 
-  return invitations.filter((invitation) => {
-    if (
-      normalizedSearch &&
-      !invitation.id.toLowerCase().includes(normalizedSearch) &&
-      !invitation.displayName.toLowerCase().includes(normalizedSearch)
-    ) {
-      return false;
-    }
-    if (
-      filters.rsvpStatus !== undefined &&
-      invitation.rsvpStatus !== filters.rsvpStatus
-    ) {
-      return false;
-    }
-    if (
-      filters.archived !== undefined &&
-      invitation.isArchived !== filters.archived
-    ) {
-      return false;
-    }
-    return true;
-  });
+  if (normalizedSearch) query = query.where("searchPrefixes", "array-contains", normalizedSearch);
+  if (filters.rsvpStatus !== undefined) query = query.where("rsvpStatus", "==", filters.rsvpStatus);
+  if (filters.archived !== undefined) query = query.where("isArchived", "==", filters.archived);
+
+  if (!paginated) {
+    const snapshot = await query.get();
+    const total = snapshot.docs.length;
+    return {
+      items: snapshot.docs.map((document) => mapInvitationSnapshot(document)),
+      total,
+      page: 1,
+      pageSize: Math.max(total, 1),
+      totalPages: total === 0 ? 0 : 1,
+    };
+  }
+
+  const countSnapshot = await query.count().get();
+  const total = countSnapshot.data().count;
+  const totalPages = Math.ceil(total / pageSize);
+  const page = totalPages === 0 ? 1 : Math.min(requestedPage, totalPages);
+  const snapshot = await query.offset((page - 1) * pageSize).limit(pageSize).get();
+
+  return {
+    items: snapshot.docs.map((document) => mapInvitationSnapshot(document)),
+    total,
+    page,
+    pageSize,
+    totalPages,
+  };
 }
 
 export async function getInvitationById(id: string): Promise<VersionedInvitation | null> {
@@ -211,6 +226,7 @@ export async function createInvitation(
     try {
       await document.create({
         ...invitationData,
+        searchPrefixes: buildInvitationSearchPrefixes(id, invitationData.displayName, invitationData.guests),
         updatedAt: FieldValue.serverTimestamp(),
       });
     } catch (error) {
@@ -261,7 +277,11 @@ export async function createInvitationIdempotently(
       idAttempts += 1;
       const document = invitations.doc(generateInvitationId());
       if ((await transaction.get(document)).exists) continue;
-      transaction.create(document, { ...data, updatedAt: FieldValue.serverTimestamp() });
+      transaction.create(document, {
+        ...data,
+        searchPrefixes: buildInvitationSearchPrefixes(document.id, data.displayName, data.guests),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
       transaction.create(receiptRef, {
         fingerprint, invitationId: document.id, createdAt: FieldValue.serverTimestamp(),
       });
@@ -297,11 +317,20 @@ export async function updateInvitation(
   const version = updatesOverride ? parseInvitationVersion(expectedVersion) : undefined;
   const document = firestore.collection("invitations").doc(updatesOverride ? parseInvitationId(id) : id);
 
-  function buildChanges(): Record<string, unknown> {
+  function buildChanges(current?: VersionedInvitation): Record<string, unknown> {
     const changes: Record<string, unknown> = {
       updatedAt: FieldValue.serverTimestamp(),
     };
-    if (input.displayName !== undefined) changes.displayName = input.displayName;
+    if (input.displayName !== undefined) {
+      changes.displayName = input.displayName;
+      if (current) {
+        changes.searchPrefixes = buildInvitationSearchPrefixes(
+          current.id,
+          input.displayName,
+          current.guests,
+        );
+      }
+    }
     if (input.replacementsAllowed !== undefined) {
       changes.replacementsAllowed = input.replacementsAllowed;
     }
@@ -312,16 +341,16 @@ export async function updateInvitation(
     return changes;
   }
 
-  if (updatesOverride) {
+  if (updatesOverride || input.displayName !== undefined) {
     const exists = await firestore.runTransaction(async (transaction) => {
       const snapshot = await transaction.get(document);
       if (!snapshot.exists) return false;
       const current = mapInvitationSnapshot(snapshot);
-      if (current.version !== version) {
+      if (updatesOverride && current.version !== version) {
         throw new HttpError(412, "PRECONDITION_FAILED",
           "La invitación cambió. Recarga los datos antes de modificar el permiso extraordinario.");
       }
-      if (input.editOverrideUntil !== null) {
+      if (updatesOverride && input.editOverrideUntil !== null) {
         if (!(input.editOverrideUntil instanceof Date) ||
           !Number.isFinite(input.editOverrideUntil.getTime()) ||
           input.editOverrideUntil.getTime() <= Date.now()) {
@@ -331,7 +360,7 @@ export async function updateInvitation(
           throw new DomainError("Restaura la invitación antes de conceder o modificar el permiso extraordinario.");
         }
       }
-      transaction.update(document, buildChanges());
+      transaction.update(document, buildChanges(current));
       return true;
     });
     if (!exists) return null;
@@ -364,6 +393,7 @@ export async function changeCapacity(
     transaction.update(document, {
       guests: changed.guests,
       maxGuests: changed.maxGuests,
+      searchPrefixes: buildInvitationSearchPrefixes(id, current.displayName, changed.guests),
       updatedAt: FieldValue.serverTimestamp(),
     });
     return { invitation: changed, changed: true } as const;
@@ -405,6 +435,7 @@ export async function restoreInvitationReplacement(
     transaction.update(document, {
       guests,
       rsvpStatus: "pending",
+      searchPrefixes: buildInvitationSearchPrefixes(id, current.displayName, guests),
       updatedAt: FieldValue.serverTimestamp(),
     });
     return true;
@@ -478,6 +509,7 @@ export async function removeInvitationGuest(
     transaction.update(document, {
       guests: originalGuests.filter((_, index) => index !== guestIndex),
       maxGuests: changed.maxGuests,
+      searchPrefixes: buildInvitationSearchPrefixes(id, current.displayName, changed.guests),
       updatedAt: FieldValue.serverTimestamp(),
     });
     return true;
@@ -509,7 +541,11 @@ export async function updateInvitationGuest(
     // The mapper validates invariants; write from raw objects to retain legacy fields.
     const guests = [...snapshot.data()!.guests] as Guest[];
     guests[guestIndex] = updateGuestName(guests[guestIndex], name);
-    transaction.update(document, { guests, updatedAt: FieldValue.serverTimestamp() });
+    transaction.update(document, {
+      guests,
+      searchPrefixes: buildInvitationSearchPrefixes(id, current.displayName, guests),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
     return true;
   });
   if (!exists) return null;

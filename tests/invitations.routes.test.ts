@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { authenticateAdmin } from "../src/middlewares/authenticateAdmin";
 import invitationsRouter from "../src/routes/invitations";
+import publicInvitationsRouter from "../src/routes/publicInvitations";
 
 describe("invitations routes", () => {
   it("protects GET / with authenticateAdmin", () => {
@@ -66,5 +67,16 @@ describe("invitations routes", () => {
     expect(
       invitationsRouter.stack.some((layer) => layer.route?.methods.delete),
     ).toBe(false);
+  });
+});
+
+describe("public RSVP route", () => {
+  it("exposes POST /:id/rsvp without the admin middleware", () => {
+    const route = publicInvitationsRouter.stack.find(
+      (layer) => layer.route?.path === "/:id/rsvp" && layer.route.methods.post,
+    );
+    expect(route).toBeDefined();
+    expect(route?.route?.stack).toHaveLength(1);
+    expect(route?.route?.stack[0].handle).not.toBe(authenticateAdmin);
   });
 });

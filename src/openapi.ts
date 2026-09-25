@@ -36,6 +36,7 @@ export const openApiDocument = {
   servers: [{ url: "/", description: "Despliegue actual" }],
   tags: [
     { name: "Estado del servicio" },
+    { name: "RSVP público" },
     { name: "Administración" },
     { name: "Invitaciones" },
   ],
@@ -81,19 +82,45 @@ export const openApiDocument = {
         },
       },
     },
+    "/api/public/invitations/{id}/rsvp": {
+      post: {
+        tags: ["RSVP público"],
+        summary: "Guardar la confirmación pública de una invitación",
+        description: "Valida el estado esperado y reconstruye guests, rsvpStatus y el índice de búsqueda en una sola transacción. No acepta campos administrativos ni requiere autenticación de administrador.",
+        parameters: [invitationIdParameter],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/PublicRsvpInput" },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description: "RSVP guardado",
+            content: { "application/json": { schema: { $ref: "#/components/schemas/PublicInvitation" } } },
+          },
+          "400": errorResponse,
+          "409": { ...errorResponse, description: "RSVP_CONFLICT o RSVP_UNAVAILABLE" },
+          "413": { ...errorResponse, description: "El JSON supera el límite de 100 KiB" },
+          "500": errorResponse,
+        },
+      },
+    },
     "/api/admin/invitations": {
       get: {
         tags: ["Invitaciones"],
         summary: "Listar invitaciones",
         description:
-          "Los filtros se combinan con AND. La búsqueda encuentra coincidencias parciales en id y displayName, sin distinguir mayúsculas de minúsculas. Si se omite archived, se devuelven invitaciones activas y archivadas; los documentos antiguos sin isArchived se consideran activos.",
+          "Los filtros se combinan con AND. search usa prefijos normalizados de id, displayName y nombres actuales de guests, sin distinguir mayúsculas ni diacríticos. page y pageSize activan paginación; el tamaño predeterminado es 15 y Boda-Admin usa actualmente ese valor.",
         security: secured,
         parameters: [
           {
             name: "search",
             in: "query",
             schema: { type: "string" },
-            description: "Coincidencia parcial en id o displayName, sin distinguir mayúsculas de minúsculas.",
+            description: "Prefijo de código, nombre completo o cualquier palabra de displayName o guests[].name; ignora mayúsculas, puntuación y diacríticos.",
           },
           {
             name: "rsvpStatus",
@@ -108,6 +135,17 @@ export const openApiDocument = {
             in: "query",
             schema: { type: "boolean" },
             description: "true devuelve invitaciones archivadas; false devuelve las activas, incluidas las de documentos antiguos.",
+          },
+          {
+            name: "page",
+            in: "query",
+            schema: { type: "integer", minimum: 1 },
+          },
+          {
+            name: "pageSize",
+            in: "query",
+            schema: { type: "integer", minimum: 1, maximum: 100, default: 15 },
+            description: "Tamaño de página configurable. Boda-Admin usa actualmente 15.",
           },
         ],
         responses: {
@@ -412,13 +450,45 @@ export const openApiDocument = {
       },
       InvitationList: {
         type: "object",
-        required: ["items", "total"],
+        required: ["items", "total", "page", "pageSize", "totalPages"],
         properties: {
           items: {
             type: "array",
             items: { $ref: "#/components/schemas/Invitation" },
           },
           total: { type: "integer", minimum: 0 },
+          page: { type: "integer", minimum: 1 },
+          pageSize: { type: "integer", minimum: 1 },
+          totalPages: { type: "integer", minimum: 0 },
+        },
+      },
+      PublicRsvpInput: {
+        type: "object",
+        additionalProperties: false,
+        required: ["expectedState", "responses", "replacementNames", "openGuestNames", "message"],
+        properties: {
+          expectedState: { type: "string", minLength: 1, maxLength: 50000 },
+          responses: { type: "array", items: { type: "boolean", nullable: true } },
+          replacementNames: { type: "array", items: { type: "string", maxLength: 100 } },
+          openGuestNames: { type: "array", items: { type: "string", maxLength: 100 } },
+          message: { type: "string", maxLength: 500 },
+        },
+      },
+      PublicInvitation: {
+        type: "object",
+        required: ["id", "displayName", "maxGuests", "replacementsAllowed", "rsvpStatus", "message", "isArchived", "archivedAt", "updatedAt", "editOverrideUntil", "guests"],
+        properties: {
+          id: { type: "string" },
+          displayName: { type: "string" },
+          maxGuests: { type: "integer", minimum: 1 },
+          replacementsAllowed: { type: "boolean" },
+          rsvpStatus: { type: "string", enum: ["pending", "confirmed", "partial", "declined"] },
+          message: { type: "string" },
+          isArchived: { type: "boolean" },
+          archivedAt: { type: "string", format: "date-time", nullable: true },
+          updatedAt: { type: "string", format: "date-time", nullable: true },
+          editOverrideUntil: { type: "string", format: "date-time", nullable: true },
+          guests: { type: "array", items: { $ref: "#/components/schemas/Guest" } },
         },
       },
       CreateInvitationInput: {
@@ -494,6 +564,8 @@ export const openApiDocument = {
                 type: "string",
                 enum: [
                   "VALIDATION_ERROR",
+                  "RSVP_CONFLICT",
+                  "RSVP_UNAVAILABLE",
                   "PRECONDITION_FAILED",
                   "IDEMPOTENCY_CONFLICT",
                   "UNAUTHORIZED",
