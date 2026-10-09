@@ -106,6 +106,37 @@ describe("public RSVP service", () => {
     expect(restored[0]).toEqual({ name: "Carlos Martínez", shortName: "Carlos", type: "known", attending: true });
   });
 
+  it("restores a replacement to an unanswered original and persists pending status", async () => {
+    const base = invitation({
+      maxGuests: 1,
+      rsvpStatus: "confirmed",
+      guests: [{ name: "Mariana López", shortName: "Mariana", type: "replacement", attending: true, originalName: "Carlos Martínez" }],
+    });
+    mocks.get.mockResolvedValue(snapshot(base));
+
+    const result = await savePublicRsvp(base.id, input(base, {
+      responses: [null], replacementNames: [""], openGuestNames: [""], message: "",
+    }), now);
+
+    expect(result.guests).toEqual([{ name: "Carlos Martínez", shortName: "Carlos", type: "known", attending: null }]);
+    expect(result.rsvpStatus).toBe("pending");
+    expect(mocks.update).toHaveBeenCalledOnce();
+    expect(mocks.update.mock.calls[0][1]).toMatchObject({ guests: result.guests, rsvpStatus: "pending" });
+  });
+
+  it("rejects null for an ordinary known guest without writing", async () => {
+    const base = invitation({
+      maxGuests: 1,
+      guests: [{ name: "Carlos Martínez", shortName: "Carlos", type: "known", attending: null }],
+    });
+    mocks.get.mockResolvedValue(snapshot(base));
+
+    await expect(savePublicRsvp(base.id, input(base, {
+      responses: [null], replacementNames: [""], openGuestNames: [""],
+    }), now)).rejects.toThrow(DomainError);
+    expect(mocks.update).not.toHaveBeenCalled();
+  });
+
   it("derives declined and partial status", () => {
     expect(calculatePublicRsvpStatus([{ name: "A", shortName: "A", type: "known", attending: false }])).toBe("declined");
     expect(calculatePublicRsvpStatus([

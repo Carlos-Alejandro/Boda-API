@@ -78,10 +78,13 @@ export function buildPublicRsvpGuests(
 
     if (openGuestName) throw new DomainError(`openGuestNames[${index}] no corresponde a un espacio abierto`);
     const response = input.responses[index];
+    const original = originalGuest(guest);
+    if (guest.type === "replacement" && response === null && !replacementName) {
+      return { ...original, type: "known", attending: null };
+    }
     if (response !== true && response !== false) {
       throw new DomainError(`responses[${index}] debe confirmar o declinar al invitado`);
     }
-    const original = originalGuest(guest);
     if (response === true) {
       if (replacementName) throw new DomainError(`replacementNames[${index}] no aplica a una confirmación`);
       return { ...original, type: "known", attending: true };
@@ -117,10 +120,12 @@ function validateDeclineAll(current: VersionedInvitation, input: PublicRsvpInput
   }
 }
 
-function hasExplicitResponse(guests: Guest[]): boolean {
+function hasExplicitResponse(current: VersionedInvitation, input: PublicRsvpInput, guests: Guest[]): boolean {
   return guests.some((guest) =>
     guest.attending === true ||
     (guest.attending === false && (guest.type !== "open" || guest.name.trim() !== "")),
+  ) || current.guests.some((guest, index) =>
+    guest.type === "replacement" && input.responses[index] === null && !input.replacementNames[index].trim(),
   );
 }
 
@@ -155,7 +160,7 @@ export async function savePublicRsvp(
 
     validateDeclineAll(current, input);
     const guests = buildPublicRsvpGuests(current, input);
-    if (!input.declineAll && !hasExplicitResponse(guests)) {
+    if (!input.declineAll && !hasExplicitResponse(current, input, guests)) {
       throw new HttpError(
         400,
         "RSVP_EMPTY",
