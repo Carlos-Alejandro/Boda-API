@@ -38,6 +38,7 @@ import {
   normalizeInvitationSearch,
 } from "./invitationSearch.service";
 import { DEFAULT_PAGE_SIZE } from "../validation/listInvitationsQuery";
+import { calculateRsvpStatus } from "./rsvpStatus.service";
 
 const RSVP_STATUSES = new Set<RsvpStatus>([
   "pending",
@@ -509,6 +510,7 @@ export async function removeInvitationGuest(
     transaction.update(document, {
       guests: originalGuests.filter((_, index) => index !== guestIndex),
       maxGuests: changed.maxGuests,
+      rsvpStatus: calculateRsvpStatus(changed.guests),
       searchPrefixes: buildInvitationSearchPrefixes(id, current.displayName, changed.guests),
       updatedAt: FieldValue.serverTimestamp(),
     });

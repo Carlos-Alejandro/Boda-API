@@ -1003,7 +1003,7 @@ describe("removeInvitationGuest transaction", () => {
     firestoreMocks.transactionGet.mockResolvedValue(snapshot());
     firestoreMocks.getDocument.mockResolvedValue(snapshot({ ...validDocument(), maxGuests: 1, guests: validDocument().guests.slice(0, 1) }, new Timestamp(101, 0)));
   });
-  it("preserves raw guest fields and archived state, writes only three fields, returns reread version", async () => {
+  it("preserves raw guest fields and archived state, writes derived status, returns reread version", async () => {
     const remaining = { ...validDocument().guests[0], historical: { nested: [1, 2] }, originalName: "Legacy" };
     const data = { ...validDocument(), isArchived: true, archivedAt: time, guests: [remaining, validDocument().guests[1]] };
     firestoreMocks.transactionGet.mockResolvedValue(snapshot(data));
@@ -1011,11 +1011,43 @@ describe("removeInvitationGuest transaction", () => {
     firestoreMocks.getDocument.mockResolvedValue(finalSnapshot);
     const result = await removeInvitationGuest("KM8P2XQ7", 1, version());
     const write = firestoreMocks.transactionUpdate.mock.calls[0][1];
-    expect(write).toEqual({ guests: [remaining], maxGuests: 1, searchPrefixes: expect.any(Array), updatedAt: FieldValue.serverTimestamp() });
+    expect(write).toEqual({ guests: [remaining], maxGuests: 1, rsvpStatus: "confirmed", searchPrefixes: expect.any(Array), updatedAt: FieldValue.serverTimestamp() });
     expect(write.guests[0]).toBe(remaining);
     expect(write).not.toHaveProperty("version");
     expect(result).toMatchObject({ isArchived: true, rsvpStatus: "confirmed", replacementsAllowed: true, version: version(finalSnapshot) });
     expect(result?.version).not.toBe(version());
+  });
+  it.each([
+    ["a confirmed guest", [true, false], 0, "declined"],
+    ["a declined guest", [false, true], 0, "confirmed"],
+    ["an unanswered guest", [null, null], 0, "pending"],
+  ] as const)("recalculates the RSVP status after removing %s and exposes it to filtered lists", async (_removedState, responses, guestIndex, expectedStatus) => {
+    const initialGuests = validDocument().guests.map((guest, index) => ({
+      ...guest,
+      attending: responses[index],
+    }));
+    const initialData = { ...validDocument(), rsvpStatus: "confirmed", guests: initialGuests };
+    const initialSnapshot = snapshot(initialData);
+    const remainingGuests = initialGuests.filter((_, index) => index !== guestIndex);
+    const updatedSnapshot = snapshot({
+      ...initialData,
+      maxGuests: remainingGuests.length,
+      guests: remainingGuests,
+      rsvpStatus: expectedStatus,
+    }, new Timestamp(101, 0));
+    firestoreMocks.transactionGet.mockResolvedValueOnce(initialSnapshot);
+    firestoreMocks.getDocument.mockResolvedValueOnce(updatedSnapshot);
+    firestoreMocks.listDocuments.mockResolvedValue({ docs: [updatedSnapshot] });
+
+    const result = await removeInvitationGuest("KM8P2XQ7", guestIndex, version(initialSnapshot));
+    const write = firestoreMocks.transactionUpdate.mock.calls[0][1];
+
+    expect(write).toMatchObject({ rsvpStatus: expectedStatus });
+    expect(result?.rsvpStatus).toBe(expectedStatus);
+    await expect(listInvitations({ rsvpStatus: expectedStatus })).resolves.toMatchObject({
+      items: [expect.objectContaining({ rsvpStatus: expectedStatus })],
+    });
+    expect(firestoreMocks.queryWhere).toHaveBeenCalledWith("rsvpStatus", "==", expectedStatus);
   });
   it("returns null for missing invitation", async () => {
     firestoreMocks.transactionGet.mockResolvedValue({ exists: false });

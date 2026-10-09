@@ -7,6 +7,9 @@ import type { Guest, PublicRsvpInput, VersionedInvitation } from "../types/invit
 import { parseInvitationId } from "../validation/invitationId";
 import { buildInvitationSearchPrefixes } from "./invitationSearch.service";
 import { mapInvitationSnapshot } from "./invitations.service";
+import { calculateRsvpStatus } from "./rsvpStatus.service";
+
+export { calculateRsvpStatus as calculatePublicRsvpStatus } from "./rsvpStatus.service";
 
 export const RSVP_CLOSE_DATE = new Date("2028-03-12T05:00:00.000Z");
 
@@ -100,14 +103,6 @@ export function buildPublicRsvpGuests(
   });
 }
 
-export function calculatePublicRsvpStatus(guests: readonly Guest[]): "confirmed" | "partial" | "declined" {
-  const attending = guests.filter((guest) => guest.attending === true).length;
-  if (attending === 0) return "declined";
-  return guests.some((guest) => guest.type === "known" && guest.attending === false)
-    ? "partial"
-    : "confirmed";
-}
-
 function unavailable(): never {
   throw new HttpError(
     409,
@@ -138,7 +133,7 @@ export async function savePublicRsvp(
     }
 
     const guests = buildPublicRsvpGuests(current, input);
-    const rsvpStatus = calculatePublicRsvpStatus(guests);
+    const rsvpStatus = calculateRsvpStatus(guests);
     const message = input.message.trim();
     transaction.update(document, {
       guests,
