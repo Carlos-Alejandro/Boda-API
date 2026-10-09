@@ -4,10 +4,18 @@ import { getFirestore } from "firebase-admin/firestore";
 
 import { env } from "./env";
 
+const existingApps = getApps();
+if (
+  env.useFirebaseEmulators &&
+  existingApps.some((app) => app.options.projectId !== "demo-boda")
+) {
+  throw new Error("An existing Firebase app is not configured for demo-boda");
+}
+
 const firebaseApp =
-  getApps()[0] ??
+  existingApps[0] ??
   initializeApp({
-    credential: applicationDefault(),
+    ...(env.useFirebaseEmulators ? {} : { credential: applicationDefault() }),
     projectId: env.firebaseProjectId,
   });
 

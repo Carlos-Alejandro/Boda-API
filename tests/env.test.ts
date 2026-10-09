@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { parseEnvironment } from "../src/config/env";
+import { getListenHost, parseEnvironment } from "../src/config/env";
 
 const REQUIRED_ENV = {
   FIREBASE_PROJECT_ID: "wedding-project",
@@ -8,6 +8,49 @@ const REQUIRED_ENV = {
 };
 
 describe("environment configuration", () => {
+  it("binds emulator mode to loopback while leaving the production host unchanged", () => {
+    expect(getListenHost(true)).toBe("127.0.0.1");
+    expect(getListenHost(false)).toBeUndefined();
+  });
+
+  it("enables emulators only with the isolated local configuration", () => {
+    expect(
+      parseEnvironment({
+        ...REQUIRED_ENV,
+        NODE_ENV: "development",
+        USE_FIREBASE_EMULATORS: "true",
+        FIREBASE_PROJECT_ID: "demo-boda",
+        FIRESTORE_EMULATOR_HOST: "127.0.0.1:8080",
+        FIREBASE_AUTH_EMULATOR_HOST: "127.0.0.1:9099",
+      }),
+    ).toMatchObject({ firebaseProjectId: "demo-boda", useFirebaseEmulators: true });
+  });
+
+  it.each([
+    { NODE_ENV: "production" },
+    { FIREBASE_PROJECT_ID: "wedding-project" },
+    { FIRESTORE_EMULATOR_HOST: "firestore.googleapis.com:443" },
+    { FIREBASE_AUTH_EMULATOR_HOST: "identitytoolkit.googleapis.com" },
+  ])("rejects unsafe emulator configuration", (overrides) => {
+    expect(() =>
+      parseEnvironment({
+        ...REQUIRED_ENV,
+        NODE_ENV: "development",
+        USE_FIREBASE_EMULATORS: "true",
+        FIREBASE_PROJECT_ID: "demo-boda",
+        FIRESTORE_EMULATOR_HOST: "127.0.0.1:8080",
+        FIREBASE_AUTH_EMULATOR_HOST: "127.0.0.1:9099",
+        ...overrides,
+      }),
+    ).toThrow(/emulator|Emulator|demo-boda|127\.0\.0\.1/);
+  });
+
+  it("rejects an invalid emulator flag", () => {
+    expect(() =>
+      parseEnvironment({ ...REQUIRED_ENV, USE_FIREBASE_EMULATORS: "yes" }),
+    ).toThrow(/USE_FIREBASE_EMULATORS/);
+  });
+
   it("uses the development port default", () => {
     expect(parseEnvironment(REQUIRED_ENV).port).toBe(3000);
   });
