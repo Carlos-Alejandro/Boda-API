@@ -219,6 +219,7 @@ describe("OpenAPI documentation", () => {
     const schema = openApiDocument.components.schemas.ErrorResponse;
     expect(schema.properties.error.properties.code.enum).toEqual([
       "VALIDATION_ERROR",
+      "RSVP_EMPTY",
       "RSVP_CONFLICT",
       "RSVP_UNAVAILABLE",
       "PRECONDITION_FAILED",

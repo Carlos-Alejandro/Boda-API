@@ -16,6 +16,7 @@ vi.mock("../src/config/firebaseAdmin", () => ({
 }));
 
 import { HttpError } from "../src/errors/HttpError";
+import { DomainError } from "../src/errors/DomainError";
 import {
   buildPublicRsvpGuests,
   calculatePublicRsvpStatus,
@@ -111,6 +112,184 @@ describe("public RSVP service", () => {
       { name: "A", shortName: "A", type: "known", attending: true },
       { name: "B", shortName: "B", type: "known", attending: false },
     ])).toBe("partial");
+  });
+
+  it("keeps empty open places pending unless the invitation is explicitly declined", () => {
+    const openGuests = [
+      { name: "", shortName: "Acompañante", type: "open" as const, attending: false },
+      { name: "", shortName: "Acompañante", type: "open" as const, attending: false },
+    ];
+    expect(calculatePublicRsvpStatus(openGuests)).toBe("pending");
+    expect(calculatePublicRsvpStatus(openGuests, true)).toBe("declined");
+  });
+
+  it("rejects an empty open-only response without writing, preserving an existing decline", async () => {
+    const base = invitation({
+      maxGuests: 2,
+      rsvpStatus: "declined",
+      guests: [
+        { name: "", shortName: "Acompañante", type: "open", attending: false },
+        { name: "", shortName: "Acompañante", type: "open", attending: false },
+      ],
+    });
+    mocks.get.mockResolvedValue(snapshot(base));
+
+    await expect(savePublicRsvp(base.id, input(base, {
+      responses: [null, null], replacementNames: ["", ""], openGuestNames: ["", ""], message: "",
+    }), now)).rejects.toMatchObject({ statusCode: 400, code: "RSVP_EMPTY" });
+    expect(mocks.update).not.toHaveBeenCalled();
+  });
+
+  it("stores an explicit open-only decline", async () => {
+    const base = invitation({
+      maxGuests: 2,
+      guests: [
+        { name: "", shortName: "Acompañante", type: "open", attending: null },
+        { name: "", shortName: "Acompañante", type: "open", attending: null },
+      ],
+    });
+    mocks.get.mockResolvedValue(snapshot(base));
+
+    const result = await savePublicRsvp(base.id, input(base, {
+      declineAll: true,
+      responses: [null, null], replacementNames: ["", ""], openGuestNames: ["", ""], message: "",
+    }), now);
+    expect(result.rsvpStatus).toBe("declined");
+    expect(result.guests.every((guest) => guest.name === "" && guest.type === "open")).toBe(true);
+    expect(mocks.update).toHaveBeenCalledOnce();
+  });
+
+  it("rejects declineAll for invitations with known people without writing", async () => {
+    const base = invitation({
+      maxGuests: 1,
+      guests: [{ name: "Carlos", shortName: "Carlos", type: "known", attending: null }],
+    });
+    mocks.get.mockResolvedValue(snapshot(base));
+
+    await expect(savePublicRsvp(base.id, input(base, {
+      declineAll: true,
+      responses: [false], replacementNames: [""], openGuestNames: [""],
+    }), now)).rejects.toThrow(DomainError);
+    expect(mocks.update).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["a confirmation", [true, null], ["", ""], ["", ""]],
+    ["an identified open guest", [null, null], ["", ""], ["Ana López", ""]],
+    ["a replacement name", [null, null], ["Mariana", ""], ["", ""]],
+  ])("rejects declineAll combined with %s without writing", async (_case, responses, replacementNames, openGuestNames) => {
+    const base = invitation({
+      maxGuests: 2,
+      guests: [
+        { name: "", shortName: "Acompañante", type: "open", attending: null },
+        { name: "", shortName: "Acompañante", type: "open", attending: null },
+      ],
+    });
+    mocks.get.mockResolvedValue(snapshot(base));
+
+    await expect(savePublicRsvp(base.id, input(base, {
+      declineAll: true,
+      responses,
+      replacementNames,
+      openGuestNames,
+    }), now)).rejects.toThrow(DomainError);
+    expect(mocks.update).not.toHaveBeenCalled();
+  });
+
+  it("clears previously identified open guests when explicitly declining", async () => {
+    const base = invitation({
+      maxGuests: 2,
+      guests: [
+        { name: "Ana López", shortName: "Ana", type: "open", attending: true },
+        { name: "", shortName: "Acompañante", type: "open", attending: false },
+      ],
+    });
+    mocks.get.mockResolvedValue(snapshot(base));
+
+    const result = await savePublicRsvp(base.id, input(base, {
+      declineAll: true,
+      responses: [null, null], replacementNames: ["", ""], openGuestNames: ["", ""], message: "",
+    }), now);
+
+    expect(result.rsvpStatus).toBe("declined");
+    expect(result.guests.every((guest) => guest.name === "" && guest.type === "open")).toBe(true);
+  });
+
+  it("keeps a known-person decline when the guest edits only the message", async () => {
+    const base = invitation({
+      maxGuests: 1,
+      rsvpStatus: "declined",
+      guests: [{ name: "Carlos", shortName: "Carlos", type: "known", attending: false }],
+    });
+    mocks.get.mockResolvedValue(snapshot(base));
+
+    const result = await savePublicRsvp(base.id, input(base, {
+      responses: [false], replacementNames: [""], openGuestNames: [""], message: "No podremos asistir",
+    }), now);
+
+    expect(result.rsvpStatus).toBe("declined");
+    expect(result.message).toBe("No podremos asistir");
+  });
+
+  it("confirms a named open guest while leaving remaining open places empty", async () => {
+    const base = invitation({
+      maxGuests: 2,
+      guests: [
+        { name: "", shortName: "Acompañante", type: "open", attending: null },
+        { name: "", shortName: "Acompañante", type: "open", attending: null },
+      ],
+    });
+    mocks.get.mockResolvedValue(snapshot(base));
+
+    const result = await savePublicRsvp(base.id, input(base, {
+      responses: [null, null], replacementNames: ["", ""], openGuestNames: ["Ana López", ""],
+    }), now);
+    expect(result.rsvpStatus).toBe("confirmed");
+    expect(result.guests[1]).toMatchObject({ name: "", type: "open", attending: false });
+  });
+
+  it.each([
+    [[true, true], "confirmed"],
+    [[true, false], "partial"],
+  ] as const)("changes a previously declined invitation to %s after valid answers", async (responses, expectedStatus) => {
+    const base = invitation({
+      maxGuests: 2,
+      rsvpStatus: "declined",
+      guests: [
+        { name: "Carlos", shortName: "Carlos", type: "known", attending: false },
+        { name: "Ana", shortName: "Ana", type: "known", attending: false },
+      ],
+    });
+    mocks.get.mockResolvedValue(snapshot(base));
+
+    const result = await savePublicRsvp(base.id, input(base, {
+      responses: [...responses], replacementNames: ["", ""], openGuestNames: ["", ""],
+    }), now);
+
+    expect(result.rsvpStatus).toBe(expectedStatus);
+    expect(mocks.update).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ["known decline", [false], "declined"],
+    ["combined known answers", [true, false], "partial"],
+  ] as const)("preserves %s status calculation", async (_case, responses, expectedStatus) => {
+    const knownGuests = responses.map((_, index) => ({
+      name: `Invitado ${index + 1}`,
+      shortName: `Invitado${index + 1}`,
+      type: "known" as const,
+      attending: null,
+    }));
+    const base = invitation({ maxGuests: knownGuests.length, guests: knownGuests });
+    mocks.get.mockResolvedValue(snapshot(base));
+
+    const result = await savePublicRsvp(base.id, input(base, {
+      responses: [...responses],
+      replacementNames: responses.map(() => ""),
+      openGuestNames: responses.map(() => ""),
+    }), now);
+
+    expect(result.rsvpStatus).toBe(expectedStatus);
   });
 
   it("rejects stale state without writing", async () => {

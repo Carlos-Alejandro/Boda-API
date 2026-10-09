@@ -16,6 +16,12 @@ describe("parsePublicRsvpInput", () => {
     expect(parsePublicRsvpInput(valid())).toEqual(valid());
   });
 
+  it("accepts the optional explicit decline intention", () => {
+    expect(parsePublicRsvpInput({ ...valid(), declineAll: true })).toMatchObject({ declineAll: true });
+    expect(parsePublicRsvpInput(valid())).not.toHaveProperty("declineAll");
+    expect(() => parsePublicRsvpInput({ ...valid(), declineAll: "true" })).toThrow(/declineAll/);
+  });
+
   it.each(["displayName", "maxGuests", "replacementsAllowed", "searchPrefixes", "rsvpStatus"])(
     "rejects administrative field %s",
     (field) => expect(() => parsePublicRsvpInput({ ...valid(), [field]: "forbidden" })).toThrow(DomainError),

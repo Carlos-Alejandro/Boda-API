@@ -435,7 +435,7 @@ export async function restoreInvitationReplacement(
     );
     transaction.update(document, {
       guests,
-      rsvpStatus: "pending",
+      rsvpStatus: calculateRsvpStatus(guests),
       searchPrefixes: buildInvitationSearchPrefixes(id, current.displayName, guests),
       updatedAt: FieldValue.serverTimestamp(),
     });
@@ -510,7 +510,9 @@ export async function removeInvitationGuest(
     transaction.update(document, {
       guests: originalGuests.filter((_, index) => index !== guestIndex),
       maxGuests: changed.maxGuests,
-      rsvpStatus: calculateRsvpStatus(changed.guests),
+      rsvpStatus: current.rsvpStatus === "declined"
+        ? current.rsvpStatus
+        : calculateRsvpStatus(changed.guests),
       searchPrefixes: buildInvitationSearchPrefixes(id, current.displayName, changed.guests),
       updatedAt: FieldValue.serverTimestamp(),
     });

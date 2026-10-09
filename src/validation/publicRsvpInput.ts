@@ -3,6 +3,7 @@ import type { PublicRsvpInput } from "../types/invitation";
 
 const ALLOWED_FIELDS = new Set([
   "expectedState",
+  "declineAll",
   "responses",
   "replacementNames",
   "openGuestNames",
@@ -38,6 +39,9 @@ export function parsePublicRsvpInput(body: unknown): PublicRsvpInput {
   ) {
     throw new DomainError("expectedState es inválido");
   }
+  if (body.declineAll !== undefined && typeof body.declineAll !== "boolean") {
+    throw new DomainError("declineAll debe ser un booleano");
+  }
   if (!Array.isArray(body.responses) || body.responses.some(
     (value) => value !== true && value !== false && value !== null,
   )) {
@@ -58,6 +62,7 @@ export function parsePublicRsvpInput(body: unknown): PublicRsvpInput {
 
   return {
     expectedState: body.expectedState,
+    ...(body.declineAll === true ? { declineAll: true } : {}),
     responses: body.responses as Array<boolean | null>,
     replacementNames,
     openGuestNames,

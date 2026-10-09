@@ -22,6 +22,10 @@ const PUBLIC_HTTP_ERRORS = {
     statusCode: 409,
     message: "La invitación no permite guardar una respuesta en este momento.",
   },
+  RSVP_EMPTY: {
+    statusCode: 400,
+    message: "Agrega una persona o indica explícitamente que nadie asistirá.",
+  },
   IDEMPOTENCY_CONFLICT: {
     statusCode: 409,
     message: "Esta clave de idempotencia ya se utilizó con otros datos. Usa la clave original solo para reintentar la misma creación.",

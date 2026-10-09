@@ -45,6 +45,7 @@ export interface InvitationListResult {
 
 export interface PublicRsvpInput {
   expectedState: string;
+  declineAll?: boolean;
   responses: Array<boolean | null>;
   replacementNames: string[];
   openGuestNames: string[];

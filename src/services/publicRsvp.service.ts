@@ -103,6 +103,27 @@ export function buildPublicRsvpGuests(
   });
 }
 
+function validateDeclineAll(current: VersionedInvitation, input: PublicRsvpInput): void {
+  if (!input.declineAll) return;
+  if (current.guests.some((guest) => guest.type !== "open")) {
+    throw new DomainError("Nadie asistirá solo aplica a invitaciones con lugares abiertos");
+  }
+  if (
+    input.responses.some((response) => response === true) ||
+    input.replacementNames.some((name) => name.trim() !== "") ||
+    input.openGuestNames.some((name) => name.trim() !== "")
+  ) {
+    throw new DomainError("No se pueden confirmar personas al declinar la invitación");
+  }
+}
+
+function hasExplicitResponse(guests: Guest[]): boolean {
+  return guests.some((guest) =>
+    guest.attending === true ||
+    (guest.attending === false && (guest.type !== "open" || guest.name.trim() !== "")),
+  );
+}
+
 function unavailable(): never {
   throw new HttpError(
     409,
@@ -132,8 +153,16 @@ export async function savePublicRsvp(
       );
     }
 
+    validateDeclineAll(current, input);
     const guests = buildPublicRsvpGuests(current, input);
-    const rsvpStatus = calculateRsvpStatus(guests);
+    if (!input.declineAll && !hasExplicitResponse(guests)) {
+      throw new HttpError(
+        400,
+        "RSVP_EMPTY",
+        "Agrega una persona o indica explícitamente que nadie asistirá.",
+      );
+    }
+    const rsvpStatus = calculateRsvpStatus(guests, input.declineAll === true);
     const message = input.message.trim();
     transaction.update(document, {
       guests,

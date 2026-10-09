@@ -101,7 +101,7 @@ export const openApiDocument = {
             description: "RSVP guardado",
             content: { "application/json": { schema: { $ref: "#/components/schemas/PublicInvitation" } } },
           },
-          "400": errorResponse,
+          "400": { ...errorResponse, description: "Validación o solicitud RSVP vacía y ambigua (RSVP_EMPTY)" },
           "409": { ...errorResponse, description: "RSVP_CONFLICT o RSVP_UNAVAILABLE" },
           "413": { ...errorResponse, description: "El JSON supera el límite de 100 KiB" },
           "500": errorResponse,
@@ -468,6 +468,7 @@ export const openApiDocument = {
         required: ["expectedState", "responses", "replacementNames", "openGuestNames", "message"],
         properties: {
           expectedState: { type: "string", minLength: 1, maxLength: 50000 },
+          declineAll: { type: "boolean", description: "Indica explícitamente que nadie asistirá; opcional para clientes existentes." },
           responses: { type: "array", items: { type: "boolean", nullable: true } },
           replacementNames: { type: "array", items: { type: "string", maxLength: 100 } },
           openGuestNames: { type: "array", items: { type: "string", maxLength: 100 } },
@@ -564,6 +565,7 @@ export const openApiDocument = {
                 type: "string",
                 enum: [
                   "VALIDATION_ERROR",
+                  "RSVP_EMPTY",
                   "RSVP_CONFLICT",
                   "RSVP_UNAVAILABLE",
                   "PRECONDITION_FAILED",

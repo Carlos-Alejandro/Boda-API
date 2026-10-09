@@ -610,6 +610,19 @@ describe("changeCapacity", () => {
     expect(result?.guests).toHaveLength(result?.maxGuests ?? 0);
   });
 
+  it("preserves an explicit decline when increasing open capacity", async () => {
+    const declinedOpenGuest = { ...openGuest, attending: false };
+    const currentGuests = [declinedOpenGuest, declinedOpenGuest];
+    const updatedGuests = [...currentGuests, openGuest];
+    firestoreMocks.transactionGet.mockResolvedValueOnce(snapshot(currentGuests, { rsvpStatus: "declined" }));
+    firestoreMocks.getDocument.mockResolvedValueOnce(snapshot(updatedGuests, { rsvpStatus: "declined" }));
+
+    const result = await changeCapacity("KM8P2XQ7", 3);
+
+    expect(result?.rsvpStatus).toBe("declined");
+    expect(firestoreMocks.transactionUpdate.mock.calls[0][1]).not.toHaveProperty("rsvpStatus");
+  });
+
   it("reduces only removable open slots and preserves remaining order", async () => {
     const attendingOpen = { ...openGuest, name: "Laura", shortName: "Laura", attending: true };
     const currentGuests = [knownGuest, openGuest, attendingOpen, openGuest];
@@ -629,6 +642,19 @@ describe("changeCapacity", () => {
       updatedAt: expect.anything(),
       },
     );
+  });
+
+  it("preserves an explicit decline when reducing unassigned open capacity", async () => {
+    const declinedOpenGuest = { ...openGuest, attending: false };
+    const currentGuests = [declinedOpenGuest, declinedOpenGuest, declinedOpenGuest];
+    const updatedGuests = currentGuests.slice(0, 2);
+    firestoreMocks.transactionGet.mockResolvedValueOnce(snapshot(currentGuests, { rsvpStatus: "declined" }));
+    firestoreMocks.getDocument.mockResolvedValueOnce(snapshot(updatedGuests, { rsvpStatus: "declined" }));
+
+    const result = await changeCapacity("KM8P2XQ7", 2);
+
+    expect(result?.rsvpStatus).toBe("declined");
+    expect(firestoreMocks.transactionUpdate.mock.calls[0][1]).not.toHaveProperty("rsvpStatus");
   });
 
   it("writes only guests, maxGuests and updatedAt while preserving other fields", async () => {
@@ -794,8 +820,8 @@ describe("restoreInvitationReplacement", () => {
     expect(firestoreMocks.getDocument).not.toHaveBeenCalled();
   });
 
-  it("restores only the selected replacement using the transactional snapshot", async () => {
-    const latestKnownGuest = { ...knownGuest, attending: false };
+  it("recalculates as confirmed when another person remains attending", async () => {
+    const latestKnownGuest = { ...knownGuest, attending: true };
     const currentGuests = [latestKnownGuest, replacementGuest];
     const updatedGuests = [latestKnownGuest, restoredGuest];
     const preserved = {
@@ -807,7 +833,7 @@ describe("restoreInvitationReplacement", () => {
       snapshot(currentGuests, { ...preserved, rsvpStatus: "confirmed" }),
     );
     firestoreMocks.getDocument.mockResolvedValueOnce(
-      { ...snapshot(updatedGuests, { ...preserved, rsvpStatus: "pending" }), updateTime: new Timestamp(101, 0) },
+      { ...snapshot(updatedGuests, { ...preserved, rsvpStatus: "confirmed" }), updateTime: new Timestamp(101, 0) },
     );
 
     const result = await restoreInvitationReplacement("KM8P2XQ7", 1, version);
@@ -826,14 +852,17 @@ describe("restoreInvitationReplacement", () => {
       maxGuests: 2,
       message: preserved.message,
       replacementsAllowed: preserved.replacementsAllowed,
-      rsvpStatus: "pending",
+      rsvpStatus: "confirmed",
     });
+    expect(result?.guests[0].attending).toBe(true);
   });
 
-  it("writes only guests, pending rsvpStatus and updatedAt", async () => {
-    const updatedGuests = [knownGuest, restoredGuest];
+  it("recalculates as pending when all resulting responses are pending", async () => {
+    const pendingKnownGuest = { ...knownGuest, attending: null };
+    const currentGuests = [pendingKnownGuest, replacementGuest];
+    const updatedGuests = [pendingKnownGuest, restoredGuest];
     firestoreMocks.transactionGet.mockResolvedValueOnce(
-      snapshot([knownGuest, replacementGuest]),
+      snapshot(currentGuests, { rsvpStatus: "confirmed" }),
     );
     firestoreMocks.getDocument.mockResolvedValueOnce(
       snapshot(updatedGuests, { rsvpStatus: "pending" }),
@@ -853,6 +882,28 @@ describe("restoreInvitationReplacement", () => {
       searchPrefixes: expect.any(Array),
       updatedAt: expect.anything(),
     });
+  });
+
+  it("recalculates a prior individual decline without retaining the substitute's answer", async () => {
+    const declinedKnownGuest = { ...knownGuest, attending: false };
+    const currentGuests = [declinedKnownGuest, replacementGuest];
+    const updatedGuests = [declinedKnownGuest, restoredGuest];
+    firestoreMocks.transactionGet.mockResolvedValueOnce(
+      snapshot(currentGuests, { rsvpStatus: "partial" }),
+    );
+    firestoreMocks.getDocument.mockResolvedValueOnce(
+      snapshot(updatedGuests, { rsvpStatus: "declined" }),
+    );
+
+    const result = await restoreInvitationReplacement("KM8P2XQ7", 1, version);
+
+    expect(firestoreMocks.transactionUpdate.mock.calls[0][1]).toMatchObject({
+      guests: updatedGuests,
+      rsvpStatus: "declined",
+    });
+    expect(result?.guests[0]).toEqual(declinedKnownGuest);
+    expect(result?.guests[1]).toEqual(restoredGuest);
+    expect(result?.rsvpStatus).toBe("declined");
   });
 
   it("rejects an out-of-range guestIndex without writing", async () => {
@@ -1016,6 +1067,31 @@ describe("removeInvitationGuest transaction", () => {
     expect(write).not.toHaveProperty("version");
     expect(result).toMatchObject({ isArchived: true, rsvpStatus: "confirmed", replacementsAllowed: true, version: version(finalSnapshot) });
     expect(result?.version).not.toBe(version());
+  });
+  it("preserves an existing explicit decline when an administrative guest removal recalculates status", async () => {
+    const initialData = {
+      ...validDocument(),
+      rsvpStatus: "declined" as const,
+      guests: [
+        { name: "", shortName: "Acompañante", type: "open" as const, attending: false },
+        { name: "", shortName: "Acompañante", type: "open" as const, attending: false },
+      ],
+    };
+    const initialSnapshot = snapshot(initialData);
+    const remainingGuests = initialData.guests.slice(0, 1);
+    const updatedSnapshot = snapshot({
+      ...initialData,
+      maxGuests: 1,
+      guests: remainingGuests,
+      rsvpStatus: "declined",
+    }, new Timestamp(101, 0));
+    firestoreMocks.transactionGet.mockResolvedValueOnce(initialSnapshot);
+    firestoreMocks.getDocument.mockResolvedValueOnce(updatedSnapshot);
+
+    const result = await removeInvitationGuest("KM8P2XQ7", 1, version(initialSnapshot));
+
+    expect(firestoreMocks.transactionUpdate.mock.calls[0][1]).toMatchObject({ rsvpStatus: "declined" });
+    expect(result?.rsvpStatus).toBe("declined");
   });
   it.each([
     ["a confirmed guest", [true, false], 0, "declined"],

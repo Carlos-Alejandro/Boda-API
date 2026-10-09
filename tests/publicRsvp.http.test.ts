@@ -18,6 +18,7 @@ vi.mock("../src/services/publicRsvp.service", () => ({
 }));
 
 import app from "../src/app";
+import { DomainError } from "../src/errors/DomainError";
 import { HttpError } from "../src/errors/HttpError";
 
 const body = {
@@ -94,6 +95,43 @@ describe("POST public RSVP HTTP", () => {
       error: { code: "VALIDATION_ERROR", message: "Campo no permitido: maxGuests" },
     });
     expect(mocks.savePublicRsvp).not.toHaveBeenCalled();
+  });
+
+  it("returns a controlled validation error when the RSVP service rejects declineAll", async () => {
+    const request = { ...body, declineAll: true };
+    mocks.savePublicRsvp.mockRejectedValueOnce(new DomainError(
+      "Nadie asistirá solo aplica a invitaciones con lugares abiertos",
+    ));
+
+    const response = await post(request);
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      error: {
+        code: "VALIDATION_ERROR",
+        message: "Nadie asistirá solo aplica a invitaciones con lugares abiertos",
+      },
+    });
+  });
+
+  it("returns the controlled empty-response error for a legacy request", async () => {
+    const emptyRequest = {
+      ...body,
+      responses: [null, null],
+      openGuestNames: ["", ""],
+      message: "",
+    };
+    mocks.savePublicRsvp.mockRejectedValueOnce(new HttpError(
+      400,
+      "RSVP_EMPTY",
+      "Agrega una persona o indica explícitamente que nadie asistirá.",
+    ));
+
+    const response = await post(emptyRequest);
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: { code: "RSVP_EMPTY" } });
+    expect(mocks.savePublicRsvp).toHaveBeenCalledWith("ABC12345", emptyRequest);
   });
 
   it("returns the stable public conflict contract", async () => {
